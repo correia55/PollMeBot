@@ -52,39 +52,39 @@ async def on_ready():
 async def on_message(message):
     # Start a new poll
     if message.content.startswith('!poll'):
-        create_poll(message)
+        await create_poll(message)
     # Vote in the current poll
     elif message.content.startswith('!vote'):
         if message.channel.id in poll_list:
-            vote_poll(message)
+            await vote_poll(message)
     # Remove a vote from the current poll
     elif message.content.startswith('!remove'):
         if message.channel.id in poll_list:
-            remove_vote(message)
+            await remove_vote(message)
 
 
 # Create a new poll
-def create_poll(message):
+async def create_poll(message):
     # Split the command using spaces, ignoring those between quotation marks
     comps = shlex.split(message.content)[1:]
 
-    multiple_options = false
-    only_numbers = false
-    delete_messages = false
-    new_options = false
+    multiple_options = False
+    only_numbers = False
+    delete_messages = False
+    new_options = False
 
     poll_comps = []
 
     # Filter the available options for polls
     for i in range(len(comps)):
         if comps[i] == '-m':
-            multiple_options = true
+            multiple_options = True
         elif comps[i] == '-o':
-            only_numbers = true
+            only_numbers = True
         elif comps[i] == '-d':
-            delete_messages = true
+            delete_messages = True
         elif comps[i] == '-n':
-            new_options = true
+            new_options = True
         else:
             poll_comps.append(comps[i])
 
@@ -103,50 +103,43 @@ def create_poll(message):
 
 
 # Vote in the current poll
-def vote_poll(message):
+async def vote_poll(message):
     # Select the current poll for that channel
     poll = poll_list[message.channel.id]
 
-    # If it allows multiple options or this participant is yet to vote
-    if poll.multiple_options or not has_voted(poll, message.author):
-        # Split the command using spaces, ignoring those between quotation marks
-        option = shlex.split(message.content)[1]
+    # Split the command using spaces, ignoring those between quotation marks
+    option = shlex.split(message.content)[1]
 
-        # Option is a number
-        try:
-            option = int(option)
+    # Option is a number
+    try:
+        option = int(option)
 
-            # If it is a valid option
-            if 0 < option <= len(poll.options):
-                # Vote for an option if multiple options are allowed and he is yet to vote this option
-                if poll.multiple_options and message.author not in poll.participants[option - 1]:
+        # If it is a valid option
+        if 0 < option <= len(poll.options):
+            # Vote for an option if multiple options are allowed and he is yet to vote this option
+            if poll.multiple_options and message.author not in poll.participants[option - 1]:
+                poll.participants[option - 1].append(message.author)
+                await client.edit_message(poll.message_id, create_message(poll))
+            # If multiple options are not allowed
+            elif not poll.multiple_options:
+                # The participant didn't vote this option
+                if message.author not in poll.participants[option - 1]:
+                    remove_prev_vote(poll, message.author)
+
                     poll.participants[option - 1].append(message.author)
                     await client.edit_message(poll.message_id, create_message(poll))
-                # If multiple options are not allowed
-                elif not poll.multiple_options:
-                    # The participant didn't vote this option
-                    if message.author not in poll.participants[option - 1]:
-                        prev_vote = -1
 
-                        for i in range(len(poll.options)):
-                            if message.author in poll.participants[i]:
-                                prev_vote = i
-                                break
+    # Option is not a number
+    except ValueError:
+        if poll.new_options:
+            if not poll.multiple_options:
+                remove_prev_vote(poll, message.author)
 
-                        # If it had voted for something else
-                        # remove the previous vote
-                        if prev_vote != -1:
-                            poll.participants[prev_vote].remove(message.author)
+            # Add the new option to the poll
+            poll.options.append(option)
+            poll.participants.append([message.author])
 
-                        poll.participants[option - 1].append(message.author)
-                        await client.edit_message(poll.message_id, create_message(poll))
-
-        # Option is not a number
-        except ValueError:
-            if poll.new_options:
-                # Add the new option to the poll
-                poll.options.append(option)
-                poll.participants.append([message.author])
+            await client.edit_message(poll.message_id, create_message(poll))
 
     # Delete the message that contains this command
     if poll.delete_messages:
@@ -154,7 +147,7 @@ def vote_poll(message):
         
 
 # Remove a vote from the current poll
-def remove_vote(message):
+async def remove_vote(message):
     # Select the current poll for that channel
     poll = poll_list[message.channel.id]
 
@@ -170,6 +163,7 @@ def remove_vote(message):
             if message.author in poll.participants[option - 1]:
                 # Remove the vote from this option
                 poll.participants[option - 1].remove(message.author)
+                await client.edit_message(poll.message_id, create_message(poll))
 
     # Option is not a number
     except ValueError:
@@ -192,26 +186,31 @@ def create_message(poll):
 
             # Show the number of voters for the option
             if poll.only_numbers:
-                msg += '%d' % len(poll.participants)
+                msg += ' %d vote.' % len(poll.participants[i])
             # Show the names of the voters for the option
             else:
                 for p in poll.participants[i]:
                     msg += ' %s' % p
                     
-        if poll.new_options:
-            msg += '\n(New options can be suggested!)'
+    if poll.new_options:
+        msg += '\n(New options can be suggested!)'
 
     return msg
 
 
-# Check if this participan has already voted for any option
-def has_voted(poll, participant):
+# Remove the previous vote of a participant
+def remove_prev_vote(poll, participant):
+    prev_vote = -1
 
     for i in range(len(poll.options)):
         if participant in poll.participants[i]:
-            return true
+            prev_vote = i
+            break
 
-    return false
+    # If it had voted for something else
+    # remove the previous vote
+    if prev_vote != -1:
+        poll.participants[prev_vote].remove(participant)
 
 
 client.run(token)
