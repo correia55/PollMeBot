@@ -1,3 +1,6 @@
+import os
+token = os.environ.get('BOT_TOKEN', None)
+
 import discord
 import asyncio
 
@@ -88,4 +91,4 @@ def create_message(poll):
     return msg
 
 
-client.run('NDg2MjAyMzE4ODE2MjgwNTc4.Dm7zfg.jdMAC6f6iM4KXWqSSjYmi9s6aYc')
+client.run(token)
