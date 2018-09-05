@@ -136,6 +136,7 @@ async def configure_channel(message):
     # Create or modify the channel with the correct configurations
     if channel_id not in channel_list:
         channel_list[channel_id] = Channel(delete_commands, delete_all)
+        channel = channel_list[channel_id]
     else:
         channel = channel_list[channel_id]
 
@@ -186,7 +187,7 @@ async def create_poll(message):
 
     # Limit the number of polls to 5 per channel
     if len(channel.poll_list) == 5:
-        channel.poll_list.remove(0)
+        channel.poll_list.pop(0)
 
     # Add the poll to the list
     channel.poll_list.append(new_poll)
@@ -230,7 +231,7 @@ async def edit_poll(message):
     poll_id = poll_comps[0]
 
     # Select the correct poll
-    poll = get_poll(channel, poll_id)
+    poll, poll_pos = get_poll(channel, poll_id)
 
     # If no poll was found with that id
     if poll is None:
@@ -274,13 +275,14 @@ async def remove_poll(message):
     poll_id = message.content.replace('!poll_remove ', '')
 
     # Select the current poll for that channel
-    poll = get_poll(channel, poll_id)
+    poll, poll_pos = get_poll(channel, poll_id)
 
     # Delete the message with the poll
     if poll is not None:
         # Only the author can remove the poll
         if poll.author == message.author:
             await client.delete_message(poll.message_id)
+            channel.poll_list.pop(poll_pos)
 
     # Delete the message that contains this command
     if channel.delete_commands:
@@ -304,7 +306,7 @@ async def vote_poll(message):
     option = option[space_pos + 1:]
 
     # Select the correct poll
-    poll = get_poll(channel, poll_id)
+    poll, poll_pos = get_poll(channel, poll_id)
 
     # If no poll was found with that id
     if poll is None:
@@ -374,7 +376,7 @@ async def remove_vote(message):
     option = option[2]
 
     # Select the current poll for that channel
-    poll = get_poll(channel, poll_id)
+    poll, poll_pos = get_poll(channel, poll_id)
 
     if poll is None:
         # Delete the message that contains this command
@@ -410,7 +412,7 @@ async def refresh_poll(message):
     poll_id = message.content.replace('!refresh ', '')
 
     # Select the current poll for that channel
-    poll = get_poll(channel, poll_id)
+    poll, poll_pos = get_poll(channel, poll_id)
 
     # Create the message with the poll
     if poll is not None:
@@ -502,9 +504,9 @@ def remove_prev_vote(poll, participant):
 def get_poll(channel, poll_id):
     for i in range(len(channel.poll_list) - 1, -1, -1):
         if channel.poll_list[i].poll_id == poll_id:
-            return channel.poll_list[i]
+            return channel.poll_list[i], i
 
-    return None
+    return None, -1
 
 
 # endregion
