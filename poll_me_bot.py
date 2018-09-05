@@ -18,7 +18,7 @@ client = discord.Client()
 
 # Class to save all the information relative to a single poll
 class Poll:
-    def __init__(self, question, options, multiple_options, only_numbers, delete_messages, new_options):
+    def __init__(self, question, options, multiple_options, only_numbers, delete_commands, delete_all, new_options):
         self.message_id = None
         self.question = question
 
@@ -37,9 +37,16 @@ class Poll:
         # Set the configuration options
         self.multiple_options = multiple_options
         self.only_numbers = only_numbers
-        self.delete_messages = delete_messages
+        self.delete_all = delete_all
+
+        if delete_all:
+            self.delete_commands = False
+        else:
+            self.delete_commands = delete_commands
+
         self.new_options = new_options
 
+# region Events
 
 # When the bot has started
 @client.event
@@ -58,19 +65,40 @@ async def on_message(message):
         if message.channel.id in poll_list:
             await vote_poll(message)
     # Remove a vote from the current poll
-    elif message.content.startswith('!remove'):
+    elif message.content.startswith('!unvote'):
         if message.channel.id in poll_list:
             await remove_vote(message)
+    # Show the current poll in a new message
+    elif message.content.startswith('!refresh'):
+        if message.channel.id in poll_list:
+            await refresh_poll(message)
+    # Remove a vote from the current poll
+    elif message.content.startswith('!help_me_poll'):
+        await help_message(message)
 
+    # Delete all messages
+    if message.channel.id in poll_list:
+        poll = poll_list[message.channel.id]
+
+        if poll.delete_all and message.author != client.user:
+            await client.delete_message(message)
+
+# endregion
+
+# region Commands
 
 # Create a new poll
 async def create_poll(message):
     # Split the command using spaces, ignoring those between quotation marks
     comps = shlex.split(message.content)[1:]
 
+    if len(comps) < 1:
+        return
+
     multiple_options = False
     only_numbers = False
-    delete_messages = False
+    delete_commands = False
+    delete_all = False
     new_options = False
 
     poll_comps = []
@@ -81,15 +109,18 @@ async def create_poll(message):
             multiple_options = True
         elif comps[i] == '-o':
             only_numbers = True
-        elif comps[i] == '-d':
-            delete_messages = True
+        elif comps[i] == '-dc':
+            delete_commands = True
+        elif comps[i] == '-da':
+            delete_all = True
         elif comps[i] == '-n':
             new_options = True
         else:
             poll_comps.append(comps[i])
 
     # Create the new poll
-    new_poll = Poll(poll_comps[0], poll_comps[1:], multiple_options, only_numbers, delete_messages, new_options)
+    new_poll = Poll(poll_comps[0], poll_comps[1:], multiple_options, only_numbers, delete_commands, delete_all,
+                    new_options)
 
     # Add the poll to the list
     poll_list[message.channel.id] = new_poll
@@ -98,7 +129,7 @@ async def create_poll(message):
     new_poll.message_id = await client.send_message(message.channel, create_message(new_poll))
 
     # Delete the message that contains this command
-    if new_poll.delete_messages:
+    if new_poll.delete_commands:
         await client.delete_message(message)
 
 
@@ -108,7 +139,16 @@ async def vote_poll(message):
     poll = poll_list[message.channel.id]
 
     # Split the command using spaces, ignoring those between quotation marks
-    option = shlex.split(message.content)[1]
+    option = shlex.split(message.content)
+
+    if len(option) != 2:
+        if poll.delete_commands:
+            await client.delete_message(message)
+
+        return
+
+    # Get the inserted option
+    option = option[1]
 
     # Option is a number
     try:
@@ -142,7 +182,7 @@ async def vote_poll(message):
             await client.edit_message(poll.message_id, create_message(poll))
 
     # Delete the message that contains this command
-    if poll.delete_messages:
+    if poll.delete_commands:
         await client.delete_message(message)
         
 
@@ -152,7 +192,16 @@ async def remove_vote(message):
     poll = poll_list[message.channel.id]
 
     # Split the command using spaces, ignoring those between quotation marks
-    option = shlex.split(message.content)[1]
+    option = shlex.split(message.content)
+
+    if len(option) != 2:
+        if poll.delete_commands:
+            await client.delete_message(message)
+
+        return
+
+    # Get the inserted option
+    option = option[1]
 
     # Option is a number
     try:
@@ -170,9 +219,41 @@ async def remove_vote(message):
         pass
 
     # Delete the message that contains this command
-    if poll.delete_messages:
+    if poll.delete_commands:
         await client.delete_message(message)
 
+
+# Show the current poll in a new message
+async def refresh_poll(message):
+    # Select the current poll for that channel
+    poll = poll_list[message.channel.id]
+
+    # Create the message with the poll
+    poll.message_id = await client.send_message(message.channel, create_message(poll))
+
+
+# Show a help message with the available commands
+async def help_message(message):
+    msg = 'Poll Me Bot Help\n' \
+          '----------------\n' \
+          'For creating a poll: *!poll "Question" "Option 1" "Option 2"*\n' \
+          'For voting for an option: *!vote number*\n' \
+          'For removing your vote for that option: *!unvote number*\n' \
+          '(More options and details are available at https://github.com/correia55/PollMeBot)\n' \
+          '(This message will self-destruct in 30 seconds.)'
+
+    # Create the message with the help
+    message_id = await client.send_message(message.channel, msg)
+
+    # Wait for 30 seconds
+    await asyncio.sleep(30)
+
+    # Delete this message
+    await client.delete_message(message_id)
+
+# endregion
+
+# region Auxiliary Functions
 
 # Creates a message given a poll
 def create_message(poll):
@@ -190,10 +271,13 @@ def create_message(poll):
             # Show the names of the voters for the option
             else:
                 for p in poll.participants[i]:
-                    msg += ' %s' % p
+                    msg += ' @%s' % p
                     
     if poll.new_options:
         msg += '\n(New options can be suggested!)'
+
+    if poll.multiple_options:
+        msg += '\n(You can vote on multiple options!)'
 
     return msg
 
@@ -211,6 +295,8 @@ def remove_prev_vote(poll, participant):
     # remove the previous vote
     if prev_vote != -1:
         poll.participants[prev_vote].remove(participant)
+
+# endregion
 
 
 client.run(token)
