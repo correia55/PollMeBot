@@ -18,7 +18,8 @@ Available settings for the channel configuration include:
 * -dc - the bot will delete only messages with commands;
 * -da - the bot will delete all messages that come after.
 
-#### Example: !poll_me_channel -da
+#### Example
+!poll_me_channel -da
 
 ### Create Poll
 
@@ -37,7 +38,8 @@ Available settings for the poll include:
 * -o - each option displays only the number of votes;
 * -n - users can vote in new options.
 
-#### Example: !poll -n party2night "Party tonight on the alley?" Yes No "Maybe if chicks"
+#### Example
+!poll -n party2night "Party tonight on the alley?" Yes No "Maybe if chicks"
 
 Note: the number of active polls per channel is limited to 5.
 
@@ -49,7 +51,8 @@ Note: the number of active polls per channel is limited to 5.
 if the author of the command is the author of the poll, then edits the poll.
 All parameters work in the same way as in Create Poll, however if the number of options is different from the one in the poll, the new options are ignored.
 
-#### Example: !poll_edit -n party2night "Party tonight on the alley at 9PM?" Yes No "Maybe if chicks"
+#### Example
+!poll_edit -n party2night "Party tonight on the alley at 9PM?" Yes No "Maybe if chicks"
 
 ### Remove Poll
 
@@ -58,7 +61,8 @@ All parameters work in the same way as in Create Poll, however if the number of 
 ```
 if the author of the command is the author of the poll, then removes the poll.
 
-#### Example: !poll_remove party2night
+#### Example
+!poll_remove party2night
 
 
 ### Refresh Poll
@@ -68,7 +72,8 @@ if the author of the command is the author of the poll, then removes the poll.
 ```
 creates a new message with the current poll, preventing users from having to locate the message where the poll is located.
 
-#### Example: !refresh party2night
+#### Example
+!refresh party2night
 
 ### Vote Poll
 
@@ -82,8 +87,9 @@ If the poll allows for new options to be created, you can use the command follow
 !vote poll_id "New option"
 ```
 
-#### Example: !vote party2night 3
-#### Example: !vote party2night "Only if booze"
+#### Example
+!vote party2night 3
+!vote party2night "Only if booze"
 
 ### Help Poll
 
@@ -92,10 +98,16 @@ If the poll allows for new options to be created, you can use the command follow
 ```
 creates a temporary message that shows examples of basic commands.
 
-## Authors
+## Author
 
-* **Acácio Correia**
+**Acácio Correia**
 
 ## License
 
 This project is licensed under the GNU GPLv3 License - see the [LICENSE.txt](LICENSE.txt) file for details.
+
+## Acknowledgment
+
+Thanks for the help with suggestions on features, improvements and the README itself.
+* **José Ribeiro**
+* **Vasco Lopes**
