@@ -325,6 +325,14 @@ async def refresh_poll(message):
 
 # Show a help message with the available commands
 async def help_message(message):
+    channel_id = message.channel.id
+
+    # Create channel if it doesn't already exist
+    if channel_id not in channel_list:
+        channel_list[channel_id] = Channel()
+
+    channel = channel_list[channel_id]
+    
     msg = 'Poll Me Bot Help\n' \
           '----------------\n' \
           'For creating a poll: *!poll poll_id "Question" "Option 1" "Option 2"*\n' \
