@@ -61,7 +61,7 @@ async def on_message(message):
     if message.content.startswith('!poll'):
         await create_poll(message)
     # Vote in the current poll
-    elif message.content.startswith('!vote'):
+    elif message.content.startswith('!vote '):  # Extra space is necessary
         if message.channel.id in poll_list:
             await vote_poll(message)
     # Remove a vote from the current poll
@@ -139,16 +139,13 @@ async def vote_poll(message):
     poll = poll_list[message.channel.id]
 
     # Split the command using spaces, ignoring those between quotation marks
-    option = shlex.split(message.content)
+    option = message.content.replace('!vote ', '')
 
-    if len(option) != 2:
+    if len(option) == 0:
         if poll.delete_commands:
             await client.delete_message(message)
 
         return
-
-    # Get the inserted option
-    option = option[1]
 
     # Option is a number
     try:
@@ -175,11 +172,15 @@ async def vote_poll(message):
             if not poll.multiple_options:
                 remove_prev_vote(poll, message.author)
 
-            # Add the new option to the poll
-            poll.options.append(option)
-            poll.participants.append([message.author])
+            if option[0] == '"' and option[-1] == '"':
+                # Remove quotation marks
+                option = option.replace('"', '')
 
-            await client.edit_message(poll.message_id, create_message(poll))
+                # Add the new option to the poll
+                poll.options.append(option)
+                poll.participants.append([message.author])
+
+                await client.edit_message(poll.message_id, create_message(poll))
 
     # Delete the message that contains this command
     if poll.delete_commands:
@@ -271,7 +272,7 @@ def create_message(poll):
             # Show the names of the voters for the option
             else:
                 for p in poll.participants[i]:
-                    msg += ' @%s' % p
+                    msg += ' %s' % p.mention
                     
     if poll.new_options:
         msg += '\n(New options can be suggested!)'
