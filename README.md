@@ -6,12 +6,25 @@ A bot, for Discord, that allows you to create polls and vote.
 
 Commands start with an exclamation mark (!) followed by the command and then each parameter separated by a space, and within quotation marks (") if it contains spaces.
 
+### Configuring Channel
+
+```
+!poll_me_channel <option>
+```
+configures the channel with the given option.
+
+Available options for the channel configuration include:
+* -ka - keep all messages;
+* -dc - the bot will delete only messages with commands;
+* -da - the bot will delete all messages that come after.
+
 ### Creating Poll
 
 ```
-!poll Question
+!poll <options> poll_id question
 ```
-creates a poll with the question and the default options (Yes and No).
+creates a poll with the question and the default options (Yes and No), identified by poll_id.
+The poll_id is used for refering to this specific poll and it can be any string without spaces.
 
 The first parameter that does not start with a dash is considered the question and the following, the options.
 If any of these parameters contains spaces, then they should be surrounded by quotation marks.
@@ -19,27 +32,27 @@ If any of these parameters contains spaces, then they should be surrounded by qu
 Available options for the poll include:
 * -m - each user may vote in multiple options;
 * -o - each option displays only the number of votes;
-* -n - users can vote in new options;
-* -dc - the bot will delete all messages with the commands;
-* -da - the bot will delete all messages that come after.
+* -n - users can vote in new options.
+
+Note: the number of active polls per channel is limited to 5.
 
 ### Refresh Poll
 
 ```
-!refresh
+!refresh poll_id
 ```
 creates a new message with the current poll, preventing users from having to locate the message where the poll is located.
 
 ### Vote Poll
 
 ```
-!vote option
+!vote poll_id option
 ```
 votes in the selected option.
 
 If the poll allows for new options to be created you can use the command followed by the new option within quotation marks:
 ```
-!vote "New option"
+!vote poll_id "New option"
 ```
 
 ### Help Poll
