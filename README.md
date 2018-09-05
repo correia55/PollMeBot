@@ -18,7 +18,7 @@ Available options for the channel configuration include:
 * -dc - the bot will delete only messages with commands;
 * -da - the bot will delete all messages that come after.
 
-### Creating Poll
+### Create Poll
 
 ```
 !poll <options> poll_id question
@@ -35,6 +35,22 @@ Available options for the poll include:
 * -n - users can vote in new options.
 
 Note: the number of active polls per channel is limited to 5.
+
+### Edit Poll
+
+```
+!poll_edit <options> poll_id question
+```
+if the author of the command is the author of the poll, then edits the poll.
+All parameters work in the same way as in Create Poll, however if the number of options is different from the one in the poll, the new options are ignored.
+
+### Remove Poll
+
+```
+!poll_remove poll_id
+```
+if the author of the command is the author of the poll, then removes the poll.
+
 
 ### Refresh Poll
 

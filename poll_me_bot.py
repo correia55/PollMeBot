@@ -34,10 +34,11 @@ class Channel:
 
 # Class to save all the information relative to a single poll
 class Poll:
-    def __init__(self, poll_id, question, options, multiple_options, only_numbers, new_options):
+    def __init__(self, poll_id, author, question, options, multiple_options, only_numbers, new_options):
         self.message_id = None
         self.question = question
         self.poll_id = poll_id
+        self.author = author
 
         # If there are no options the default options are Yes and No
         if len(options) > 0:
@@ -71,14 +72,22 @@ async def on_message(message):
     # Configure the channel
     if message.content.startswith('!poll_me_channel'):
         await configure_channel(message)
+    # Edit a poll
+    elif message.content.startswith('!poll_edit'):
+        if message.channel.id in channel_list:
+            await edit_poll(message)
+    # Remove a poll
+    elif message.content.startswith('!poll_remove '):
+        if message.channel.id in channel_list:
+            await remove_poll(message)
     # Start a new poll
     elif message.content.startswith('!poll'):
         await create_poll(message)
-    # Vote in the current poll
+    # Vote in a poll
     elif message.content.startswith('!vote '):  # Extra space is necessary
         if message.channel.id in channel_list:
             await vote_poll(message)
-    # Remove a vote from the current poll
+    # Remove a vote from a poll
     elif message.content.startswith('!unvote'):
         if message.channel.id in channel_list:
             await remove_vote(message)
@@ -86,7 +95,7 @@ async def on_message(message):
     elif message.content.startswith('!refresh '):  # Extra space is necessary
         if message.channel.id in channel_list:
             await refresh_poll(message)
-    # Remove a vote from the current poll
+    # Show a help me message
     elif message.content.startswith('!help_me_poll'):
         await help_message(message)
 
@@ -172,7 +181,8 @@ async def create_poll(message):
         return
 
     # Create the new poll
-    new_poll = Poll(poll_comps[0], poll_comps[1], poll_comps[2:], multiple_options, only_numbers, new_options)
+    new_poll = Poll(poll_comps[0], message.author, poll_comps[1], poll_comps[2:], multiple_options, only_numbers,
+                    new_options)
 
     # Limit the number of polls to 5 per channel
     if len(channel.poll_list) == 5:
@@ -189,7 +199,95 @@ async def create_poll(message):
         await client.delete_message(message)
 
 
-# Vote in the current poll
+# Edit a poll
+async def edit_poll(message):
+    channel_id = message.channel.id
+    channel = channel_list[channel_id]
+
+    # Split the command using spaces, ignoring those between quotation marks
+    comps = shlex.split(message.content)[1:]
+
+    multiple_options = False
+    only_numbers = False
+    new_options = False
+
+    poll_comps = []
+
+    # Filter the available options for polls
+    for i in range(len(comps)):
+        if comps[i] == '-m':
+            multiple_options = True
+        elif comps[i] == '-o':
+            only_numbers = True
+        elif comps[i] == '-n':
+            new_options = True
+        else:
+            poll_comps.append(comps[i])
+
+    if len(poll_comps) < 2:
+        return
+
+    poll_id = poll_comps[0]
+
+    # Select the correct poll
+    poll = get_poll(channel, poll_id)
+
+    # If no poll was found with that id
+    if poll is None:
+        # Delete the message that contains this command
+        if channel.delete_commands:
+            await client.delete_message(message)
+
+        return
+
+    # Only the author can edit
+    if poll.author != message.author:
+        # Delete the message that contains this command
+        if channel.delete_commands:
+            await client.delete_message(message)
+
+        return
+
+    poll.question = poll_comps[1]
+
+    options = poll_comps[2:]
+
+    if len(options) == len(poll.options):
+        poll.options = options
+
+    poll.multiple_options = multiple_options
+    poll.only_numbers = only_numbers
+    poll.new_options = new_options
+
+    # Edit message
+    await client.edit_message(poll.message_id, create_message(poll))
+
+    # Delete the message that contains this command
+    if channel.delete_commands:
+        await client.delete_message(message)
+
+
+# Remove a poll
+async def remove_poll(message):
+    channel = channel_list[message.channel.id]
+
+    poll_id = message.content.replace('!poll_remove ', '')
+
+    # Select the current poll for that channel
+    poll = get_poll(channel, poll_id)
+
+    # Delete the message with the poll
+    if poll is not None:
+        # Only the author can remove the poll
+        if poll.author == message.author:
+            await client.delete_message(poll.message_id)
+
+    # Delete the message that contains this command
+    if channel.delete_commands:
+        await client.delete_message(message)
+
+
+# Vote in a poll
 async def vote_poll(message):
     channel = channel_list[message.channel.id]
 
@@ -259,7 +357,7 @@ async def vote_poll(message):
         await client.delete_message(message)
 
 
-# Remove a vote from the current poll
+# Remove a vote from a pole
 async def remove_vote(message):
     channel = channel_list[message.channel.id]
 
@@ -305,7 +403,7 @@ async def remove_vote(message):
         await client.delete_message(message)
 
 
-# Show the current poll in a new message
+# Show a pole in a new message
 async def refresh_poll(message):
     channel = channel_list[message.channel.id]
 
@@ -332,7 +430,7 @@ async def help_message(message):
         channel_list[channel_id] = Channel()
 
     channel = channel_list[channel_id]
-    
+
     msg = 'Poll Me Bot Help\n' \
           '----------------\n' \
           'For creating a poll: *!poll poll_id "Question" "Option 1" "Option 2"*\n' \
