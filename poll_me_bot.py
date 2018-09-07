@@ -2,12 +2,13 @@ import os
 import shlex
 import discord
 import asyncio
+import pickle
 
 # Get the token for the bot saved in the environment variable
 token = os.environ.get('BOT_TOKEN', None)
 
 if token is None:
-    print ('Unable to find bot token!')
+    print('Unable to find bot token!')
     exit(1)
 
 # List of all channels with polls
@@ -15,6 +16,7 @@ channel_list = {}
 
 # Create a client
 client = discord.Client()
+
 
 # Class to save configurations specific to the channel and applicable to all polls
 class Channel:
@@ -58,11 +60,14 @@ class Poll:
 
         self.new_options = new_options
 
+
 # region Events
 
 # When the bot has started
 @client.event
 async def on_ready():
+    load_data()
+
     print('The bot is ready to poll!\n-------------------------')
 
 
@@ -106,6 +111,7 @@ async def on_message(message):
         if channel.delete_all and message.author != client.user:
             await client.delete_message(message)
 
+
 # endregion
 
 # region Commands
@@ -116,9 +122,10 @@ async def configure_channel(message):
     comps = message.content.split(' ')
 
     if len(comps) != 2:
-        # Delete the message that contains this command
-        if channel.delete_commands:
-            await client.delete_message(message)
+        if channel_id in channel_list:
+            # Delete the message that contains this command
+            if channel_list[channel_id].delete_commands:
+                await client.delete_message(message)
 
         return
 
@@ -142,6 +149,9 @@ async def configure_channel(message):
 
         channel.delete_commands = delete_commands
         channel.delete_all = delete_all
+
+    # Save data to file
+    save_data()
 
     # Delete the message that contains this command
     if channel.delete_commands:
@@ -194,6 +204,9 @@ async def create_poll(message):
 
     # Create the message with the poll
     new_poll.message_id = await client.send_message(message.channel, create_message(new_poll))
+
+    # Save data to file
+    save_data()
 
     # Delete the message that contains this command
     if channel.delete_commands:
@@ -263,6 +276,9 @@ async def edit_poll(message):
     # Edit message
     await client.edit_message(poll.message_id, create_message(poll))
 
+    # Save data to file
+    save_data()
+
     # Delete the message that contains this command
     if channel.delete_commands:
         await client.delete_message(message)
@@ -283,6 +299,9 @@ async def remove_poll(message):
         if poll.author == message.author:
             await client.delete_message(poll.message_id)
             channel.poll_list.pop(poll_pos)
+
+    # Save data to file
+    save_data()
 
     # Delete the message that contains this command
     if channel.delete_commands:
@@ -329,6 +348,10 @@ async def vote_poll(message):
             if poll.multiple_options and message.author not in poll.participants[option - 1]:
                 poll.participants[option - 1].append(message.author)
                 await client.edit_message(poll.message_id, create_message(poll))
+
+                # Save data to file
+                save_data()
+
             # If multiple options are not allowed
             elif not poll.multiple_options:
                 # The participant didn't vote this option
@@ -337,6 +360,9 @@ async def vote_poll(message):
 
                     poll.participants[option - 1].append(message.author)
                     await client.edit_message(poll.message_id, create_message(poll))
+
+                    # Save data to file
+                    save_data()
 
     # Option is not a number
     except ValueError:
@@ -353,6 +379,9 @@ async def vote_poll(message):
                 poll.participants.append([message.author])
 
                 await client.edit_message(poll.message_id, create_message(poll))
+
+                # Save data to file
+                save_data()
 
     # Delete the message that contains this command
     if channel.delete_commands:
@@ -396,6 +425,9 @@ async def remove_vote(message):
                 poll.participants[option - 1].remove(message.author)
                 await client.edit_message(poll.message_id, create_message(poll))
 
+                # Save data to file
+                save_data()
+
     # Option is not a number
     except ValueError:
         pass
@@ -417,6 +449,9 @@ async def refresh_poll(message):
     # Create the message with the poll
     if poll is not None:
         poll.message_id = await client.send_message(message.channel, create_message(poll))
+
+        # Save data to file
+        save_data()
 
     # Delete the message that contains this command
     if channel.delete_commands:
@@ -453,6 +488,7 @@ async def help_message(message):
 
     # Delete this message
     await client.delete_message(message_id)
+
 
 # endregion
 
@@ -507,6 +543,27 @@ def get_poll(channel, poll_id):
             return channel.poll_list[i], i
 
     return None, -1
+
+
+# endregion
+
+# region File Handling
+
+def save_data():
+    file = open('data.bin', 'wb')
+    pickle.dump(channel_list, file)
+    file.close()
+
+
+def load_data():
+    global channel_list
+
+    try:
+        file = open('data.bin', 'rb')
+        channel_list = pickle.load(file)
+        file.close()
+    except FileNotFoundError:
+        print ('Unable to open data file!')
 
 
 # endregion

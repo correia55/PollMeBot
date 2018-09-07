@@ -1,22 +1,23 @@
 # Poll Me Bot - for Discord
 
-A bot, for Discord, that allows you to create polls and vote.
+A bot, for Discord, that allows you and your friends to create polls and vote.
 
 ## Available Commands
 
-Commands start with an exclamation mark (!) followed by the command and then each parameter separated by a space, and within quotation marks (") if it contains spaces.
+Commands start with an exclamation mark (!) followed by the command and then each 
+parameter separated by a space. If a parameter contains spaces, it should be written
+within quotation marks ("), otherwise it will be split into multiple parameters.
 
-### Configuring Channel
+### Configure Channel
 
 ```
 !poll_me_channel <setting>
 ```
-configures the channel with the given setting.
 
-Available settings for the channel configuration include:
-* -ka - keep all messages;
-* -dc - the bot will delete only messages with commands;
-* -da - the bot will delete all messages that come after.
+Available *settings* for the channel configuration include:
+* -dc - all messages with commands for the bot will be deleted in this channel;
+* -da - all messages will be deleted in this channel;
+* -ka - all messages are kept in this channel, nothing is deleted.
 
 #### Example
 !poll_me_channel -da
@@ -26,40 +27,52 @@ Available settings for the channel configuration include:
 ```
 !poll <settings> poll_id question <response_options>
 ```
-creates a poll with the question and the responses provided, identified by poll_id.
+
 If no responses are provided, the default responses are Yes and No.
-The poll_id is used for refering to this specific poll and it can be any string without spaces.
 
-The first parameter that does not start with a dash is considered to be the poll_id, then the question and all of the following, the response options.
-If any of these parameters contains spaces, then they should be surrounded by quotation marks.
+The poll_id is used for referring to this specific poll. It can be any string without
+ spaces.
 
-Available settings for the poll include:
+The first parameter that does not start with a dash is considered to be the poll_id,
+ the next one the question and all of the following, the response options.
+If any of these parameters contains spaces, then they should be surrounded by 
+quotation marks.
+
+Available *settings* for the poll include:
 * -m - each user may vote in multiple options;
 * -o - each option displays only the number of votes;
 * -n - users can vote in new options.
 
-#### Example
-!poll -n party2night "Party tonight on the alley?" Yes No "Maybe if chicks"
-
 Note: the number of active polls per channel is limited to 5.
+
+#### Example
+!poll -n party2night "Let's party tonight?" Yes No "Only after midnight"
+
+![Create Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/create_poll.gif)
 
 ### Edit Poll
 
 ```
 !poll_edit <settings> poll_id question responses
 ```
-if the author of the command is the author of the poll, then edits the poll.
-All parameters work in the same way as in Create Poll, however if the number of options is different from the one in the poll, the new options are ignored.
+
+A poll can only be edited by its owner.
+
+All parameters work in the same way as in **Create Poll**, however if the number of 
+options is different from the one in the poll, the new options are ignored.
 
 #### Example
-!poll_edit -n party2night "Party tonight on the alley at 9PM?" Yes No "Maybe if chicks"
+!poll_edit -n party2night "Let's party tonight at the pub?" Yes No "Only after midnight"
+
+![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/edit_poll.gif)
 
 ### Remove Poll
 
 ```
 !poll_remove poll_id
 ```
-if the author of the command is the author of the poll, then removes the poll.
+
+A poll can only be removed by its owner.
 
 #### Example
 !poll_remove party2night
@@ -70,7 +83,9 @@ if the author of the command is the author of the poll, then removes the poll.
 ```
 !refresh poll_id
 ```
-creates a new message with the current poll, preventing users from having to locate the message where the poll is located.
+
+Refreshing a poll means a new message will be created with the poll, saving you the 
+trouble of trying to find the previous location of the poll.
 
 #### Example
 !refresh party2night
@@ -80,23 +95,35 @@ creates a new message with the current poll, preventing users from having to loc
 ```
 !vote poll_id option
 ```
-votes in the selected option.
 
-If the poll allows for new options to be created, you can use the command followed by the new option within quotation marks:
+If the poll allows for new options to be created, the command followed by the new 
+option within quotation marks can be used instead:
 ```
 !vote poll_id "New option"
 ```
 
-#### Example
+#### Examples
 !vote party2night 3
+
+![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/vote_poll.gif)
+
 !vote party2night "Only if booze"
+
+![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/vote_new_poll.gif)
 
 ### Help Poll
 
 ```
 !help_me_poll
 ```
-creates a temporary message that shows examples of basic commands.
+
+Help creates a temporary message that shows examples of basic commands.
+
+#### Example
+
+!help_me_poll
+
+![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/help_me_poll.gif)
 
 ## Author
 
@@ -110,4 +137,4 @@ This project is licensed under the GNU GPLv3 License - see the [LICENSE.txt](LIC
 
 Thanks for the help with suggestions on features, improvements and the README itself.
 * **José Ribeiro**
-* **Vasco Lopes**
+* **[Vasco Lopes](https://github.com/VascoLopes)**
