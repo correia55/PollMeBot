@@ -2,7 +2,92 @@ import os
 import shlex
 import discord
 import asyncio
-import pickle
+
+from sqlalchemy import create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy import Column, String, Integer, Boolean, ForeignKey
+
+engine = create_engine('postgresql://acorreia:1234@localhost:5432/poll-me-bot')
+Session = sessionmaker(bind=engine)
+
+base = declarative_base()
+
+
+class Channel(base):
+    __tablename__ = 'Channel'
+
+    id = Column(Integer, primary_key=True)
+    discord_id = Column(String, unique=True)
+    delete_commands = Column(Boolean)
+    delete_all = Column(Boolean)
+
+    polls = relationship('Poll', cascade='all,delete')
+
+    def __init__(self, discord_id, delete_commands=False, delete_all=False):
+        self.discord_id = discord_id
+        self.delete_commands = delete_commands
+        self.delete_all = delete_all
+
+
+class Poll(base):
+    __tablename__ = 'Poll'
+
+    id = Column(Integer, primary_key=True)
+    poll_id = Column(String, unique=True)
+    author = Column(String)
+    question = Column(String)
+    multiple_options = Column(Boolean)
+    only_numbers = Column(Boolean)
+    new_options = Column(Boolean)
+    message_id = Column(String)
+    channel_id = Column(Integer, ForeignKey('Channel.id'))
+
+    options = relationship('Option', cascade='all,delete')
+
+    def __init__(self, poll_id, author, question, multiple_options, only_numbers, new_options, channel_id):
+        self.poll_id = poll_id
+        self.author = author
+        self.question = question
+        self.multiple_options = multiple_options
+        self.only_numbers = only_numbers
+        self.new_options = new_options
+        self.channel_id = channel_id
+
+
+class Option(base):
+    __tablename__ = 'Option'
+
+    id = Column(Integer, primary_key=True)
+    poll_id = Column(Integer, ForeignKey('Poll.id'))
+    option = Column(String)
+
+    votes = relationship('Vote', cascade='all,delete')
+
+    def __init__(self, poll_id, option):
+        self.poll_id = poll_id
+        self.option = option
+
+
+class Vote(base):
+    __tablename__ = 'Vote'
+
+    id = Column(Integer, primary_key=True)
+    option_id = Column(Integer, ForeignKey('Option.id'))
+    participant_id = Column(String)
+
+    def __init__(self, option_id, participant_id):
+        self.option_id = option_id
+        self.participant_id = participant_id
+
+
+# Create tables if they don't exist
+if not engine.dialect.has_table(engine, 'Channel'):
+    print('Creating Tables...')
+    base.metadata.create_all(engine)
+
+# New Session
+session = Session()
 
 # Get the token for the bot saved in the environment variable
 token = os.environ.get('BOT_TOKEN', None)
@@ -11,54 +96,8 @@ if token is None:
     print('Unable to find bot token!')
     exit(1)
 
-# List of all channels with polls
-channel_list = {}
-
 # Create a client
 client = discord.Client()
-
-
-# Class to save configurations specific to the channel and applicable to all polls
-class Channel:
-    def __init__(self, delete_commands=False, delete_all=False):
-        self.delete_all = delete_all
-
-        if delete_all:
-            self.delete_commands = False
-        elif delete_commands:
-            self.delete_commands = True
-        else:
-            self.delete_commands = False
-
-        # List of all polls in the channel
-        self.poll_list = []
-
-
-# Class to save all the information relative to a single poll
-class Poll:
-    def __init__(self, poll_id, author, question, options, multiple_options, only_numbers, new_options):
-        self.message_id = None
-        self.question = question
-        self.poll_id = poll_id
-        self.author = author
-
-        # If there are no options the default options are Yes and No
-        if len(options) > 0:
-            self.options = options
-        else:
-            self.options = ['Yes', 'No']
-
-        # Create a list for participants for each option
-        self.participants = []
-
-        for i in range(len(self.options)):
-            self.participants.append([])
-
-        # Set the configuration options
-        self.multiple_options = multiple_options
-        self.only_numbers = only_numbers
-
-        self.new_options = new_options
 
 
 # region Events
@@ -66,49 +105,48 @@ class Poll:
 # When the bot has started
 @client.event
 async def on_ready():
-    load_data()
-
     print('The bot is ready to poll!\n-------------------------')
 
 
 # When a message is written in Discord
 @client.event
 async def on_message(message):
+    # Get the channel information from the DB
+    channel = session.query(Channel).filter(Channel.discord_id == message.channel.id).first()
+
     # Configure the channel
     if message.content.startswith('!poll_me_channel'):
         await configure_channel(message)
     # Edit a poll
     elif message.content.startswith('!poll_edit'):
-        if message.channel.id in channel_list:
-            await edit_poll(message)
+        if channel is not None:
+            await edit_poll(message, channel)
     # Remove a poll
     elif message.content.startswith('!poll_remove '):
-        if message.channel.id in channel_list:
-            await remove_poll(message)
+        if channel is not None:
+            await remove_poll(message, channel)
     # Start a new poll
     elif message.content.startswith('!poll'):
         await create_poll(message)
     # Vote in a poll
     elif message.content.startswith('!vote '):  # Extra space is necessary
-        if message.channel.id in channel_list:
-            await vote_poll(message)
+        if channel is not None:
+            await vote_poll(message, channel)
     # Remove a vote from a poll
     elif message.content.startswith('!unvote'):
-        if message.channel.id in channel_list:
-            await remove_vote(message)
+        if channel is not None:
+            await remove_vote(message, channel)
     # Show the current poll in a new message
     elif message.content.startswith('!refresh '):  # Extra space is necessary
-        if message.channel.id in channel_list:
-            await refresh_poll(message)
+        if channel is not None:
+            await refresh_poll(message, channel)
     # Show a help me message
     elif message.content.startswith('!help_me_poll'):
         await help_message(message)
 
     # Delete all messages
-    if message.channel.id in channel_list:
-        channel = channel_list[message.channel.id]
-
-        if channel.delete_all and message.author != client.user:
+    if channel is not None:
+        if channel.delete_all and message.author.mention != client.user:
             await client.delete_message(message)
 
 
@@ -121,10 +159,12 @@ async def configure_channel(message):
     channel_id = message.channel.id
     comps = message.content.split(' ')
 
+    channel = session.query(Channel).filter(Channel.discord_id == channel_id).first()
+
     if len(comps) != 2:
-        if channel_id in channel_list:
+        if channel is not None:
             # Delete the message that contains this command
-            if channel_list[channel_id].delete_commands:
+            if channel.delete_commands:
                 await client.delete_message(message)
 
         return
@@ -141,17 +181,15 @@ async def configure_channel(message):
         delete_all = False
 
     # Create or modify the channel with the correct configurations
-    if channel_id not in channel_list:
-        channel_list[channel_id] = Channel(delete_commands, delete_all)
-        channel = channel_list[channel_id]
-    else:
-        channel = channel_list[channel_id]
+    if channel is None:
+        channel = Channel(channel_id, delete_commands, delete_all)
 
+        session.add(channel)
+    else:
         channel.delete_commands = delete_commands
         channel.delete_all = delete_all
 
-    # Save data to file
-    save_data()
+    session.commit()
 
     # Delete the message that contains this command
     if channel.delete_commands:
@@ -162,11 +200,12 @@ async def configure_channel(message):
 async def create_poll(message):
     channel_id = message.channel.id
 
-    # Create channel if it doesn't already exist
-    if channel_id not in channel_list:
-        channel_list[channel_id] = Channel()
+    channel = session.query(Channel).filter(Channel.discord_id == channel_id).first()
 
-    channel = channel_list[channel_id]
+    # Create channel if it doesn't already exist
+    if channel is None:
+        channel = Channel(channel_id)
+        session.add(channel)
 
     # Split the command using spaces, ignoring those between quotation marks
     comps = shlex.split(message.content)[1:]
@@ -192,21 +231,34 @@ async def create_poll(message):
         return
 
     # Create the new poll
-    new_poll = Poll(poll_comps[0], message.author, poll_comps[1], poll_comps[2:], multiple_options, only_numbers,
-                    new_options)
+    new_poll = Poll(poll_comps[0], message.author.mention, poll_comps[1], multiple_options, only_numbers, new_options,
+                    channel.id)
+
+    session.add(new_poll)
+
+    # Necessary for the options to get the poll id
+    session.flush()
+
+    options = []
+
+    # Create the options
+    for option in poll_comps[2:]:
+        options.append(Option(new_poll.id, option))
+
+    session.add_all(options)
 
     # Limit the number of polls to 5 per channel
-    if len(channel.poll_list) == 5:
-        channel.poll_list.pop(0)
+    if session.query(Poll).filter(Poll.channel_id == channel.id).count() == 5:
+        poll = session.query(Poll).first()
 
-    # Add the poll to the list
-    channel.poll_list.append(new_poll)
+        session.delete(poll)
 
     # Create the message with the poll
-    new_poll.message_id = await client.send_message(message.channel, create_message(new_poll))
+    msg = await client.send_message(message.channel, create_message(new_poll, options))
 
-    # Save data to file
-    save_data()
+    new_poll.message_id = msg.id
+
+    session.commit()
 
     # Delete the message that contains this command
     if channel.delete_commands:
@@ -214,10 +266,7 @@ async def create_poll(message):
 
 
 # Edit a poll
-async def edit_poll(message):
-    channel_id = message.channel.id
-    channel = channel_list[channel_id]
-
+async def edit_poll(message, channel):
     # Split the command using spaces, ignoring those between quotation marks
     comps = shlex.split(message.content)[1:]
 
@@ -243,8 +292,8 @@ async def edit_poll(message):
 
     poll_id = poll_comps[0]
 
-    # Select the correct poll
-    poll, poll_pos = get_poll(channel, poll_id)
+    # Select the current poll
+    poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
 
     # If no poll was found with that id
     if poll is None:
@@ -255,7 +304,7 @@ async def edit_poll(message):
         return
 
     # Only the author can edit
-    if poll.author != message.author:
+    if poll.author != message.author.mention:
         # Delete the message that contains this command
         if channel.delete_commands:
             await client.delete_message(message)
@@ -263,21 +312,25 @@ async def edit_poll(message):
         return
 
     poll.question = poll_comps[1]
+    msg_options = poll_comps[2:]
 
-    options = poll_comps[2:]
+    options = session.query(Option).filter(Option.poll_id == poll.id).all()
 
-    if len(options) == len(poll.options):
-        poll.options = options
+    # Update the options
+    if len(msg_options) == len(options):
+        for i in range(len(options)):
+            options[i].option = msg_options[i]
 
     poll.multiple_options = multiple_options
     poll.only_numbers = only_numbers
     poll.new_options = new_options
 
     # Edit message
-    await client.edit_message(poll.message_id, create_message(poll))
+    c = client.get_channel(channel.discord_id)
+    m = await client.get_message(c, poll.message_id)
+    await client.edit_message(m, create_message(poll, options))
 
-    # Save data to file
-    save_data()
+    session.commit()
 
     # Delete the message that contains this command
     if channel.delete_commands:
@@ -285,23 +338,23 @@ async def edit_poll(message):
 
 
 # Remove a poll
-async def remove_poll(message):
-    channel = channel_list[message.channel.id]
-
+async def remove_poll(message, channel):
     poll_id = message.content.replace('!poll_remove ', '')
 
-    # Select the current poll for that channel
-    poll, poll_pos = get_poll(channel, poll_id)
+    # Select the current poll
+    poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
 
     # Delete the message with the poll
     if poll is not None:
         # Only the author can remove the poll
-        if poll.author == message.author:
-            await client.delete_message(poll.message_id)
-            channel.poll_list.pop(poll_pos)
+        if poll.author == message.author.mention:
+            c = client.get_channel(channel.discord_id)
+            m = await client.get_message(c, poll.message_id)
 
-    # Save data to file
-    save_data()
+            await client.delete_message(m)
+            session.delete(poll)
+
+    session.commit()
 
     # Delete the message that contains this command
     if channel.delete_commands:
@@ -309,9 +362,7 @@ async def remove_poll(message):
 
 
 # Vote in a poll
-async def vote_poll(message):
-    channel = channel_list[message.channel.id]
-
+async def vote_poll(message, channel):
     # Split the command using spaces, ignoring those between quotation marks
     option = message.content.replace('!vote ', '')
 
@@ -325,7 +376,7 @@ async def vote_poll(message):
     option = option[space_pos + 1:]
 
     # Select the correct poll
-    poll, poll_pos = get_poll(channel, poll_id)
+    poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
 
     # If no poll was found with that id
     if poll is None:
@@ -338,50 +389,70 @@ async def vote_poll(message):
 
         return
 
+    options = session.query(Option).filter(Option.poll_id == poll.id).all()
+
     # Option is a number
     try:
         option = int(option)
 
         # If it is a valid option
         if 0 < option <= len(poll.options):
-            # Vote for an option if multiple options are allowed and he is yet to vote this option
-            if poll.multiple_options and message.author not in poll.participants[option - 1]:
-                poll.participants[option - 1].append(message.author)
-                await client.edit_message(poll.message_id, create_message(poll))
+            vote = session.query(Vote)\
+                .filter(Vote.option_id == options[option - 1].id)\
+                .filter(Vote.participant_id == message.author.mention).first()
 
-                # Save data to file
-                save_data()
+            # Vote for an option if multiple options are allowed and he is yet to vote this option
+            if poll.multiple_options and vote is None:
+                # Add the new vote
+                vote = Vote(options[option - 1].id, message.author.mention)
+                session.add(vote)
+
+                # Edit the message
+                c = client.get_channel(channel.discord_id)
+                m = await client.get_message(c, poll.message_id)
+                await client.edit_message(m, create_message(poll, options))
 
             # If multiple options are not allowed
             elif not poll.multiple_options:
                 # The participant didn't vote this option
-                if message.author not in poll.participants[option - 1]:
-                    remove_prev_vote(poll, message.author)
+                if vote is None:
+                    remove_prev_vote(options, message.author.mention)
 
-                    poll.participants[option - 1].append(message.author)
-                    await client.edit_message(poll.message_id, create_message(poll))
+                    # Add the new vote
+                    vote = Vote(options[option - 1].id, message.author.mention)
+                    session.add(vote)
 
-                    # Save data to file
-                    save_data()
+                    # Edit the message
+                    c = client.get_channel(channel.discord_id)
+                    m = await client.get_message(c, poll.message_id)
+                    await client.edit_message(m, create_message(poll, options))
 
     # Option is not a number
     except ValueError:
         if poll.new_options:
             if not poll.multiple_options:
-                remove_prev_vote(poll, message.author)
+                remove_prev_vote(options, message.author.mention)
 
             if option[0] == '"' and option[-1] == '"':
                 # Remove quotation marks
                 option = option.replace('"', '')
 
                 # Add the new option to the poll
-                poll.options.append(option)
-                poll.participants.append([message.author])
+                option = Option(poll.id, option)
+                options.append(option)
+                session.add(option)
 
-                await client.edit_message(poll.message_id, create_message(poll))
+                session.flush()
 
-                # Save data to file
-                save_data()
+                vote = Vote(option.id, message.author.mention)
+                session.add(vote)
+
+                # Edit the message
+                c = client.get_channel(channel.discord_id)
+                m = await client.get_message(c, poll.message_id)
+                await client.edit_message(m, create_message(poll, options))
+
+    session.commit()
 
     # Delete the message that contains this command
     if channel.delete_commands:
@@ -389,7 +460,7 @@ async def vote_poll(message):
 
 
 # Remove a vote from a pole
-async def remove_vote(message):
+async def remove_vote(message, channel):
     channel = channel_list[message.channel.id]
 
     # Split the command using spaces
@@ -420,9 +491,9 @@ async def remove_vote(message):
 
         # If it is a valid option
         if 0 < option <= len(poll.options):
-            if message.author in poll.participants[option - 1]:
+            if message.author.mention in poll.participants[option - 1]:
                 # Remove the vote from this option
-                poll.participants[option - 1].remove(message.author)
+                poll.participants[option - 1].remove(message.author.mention)
                 await client.edit_message(poll.message_id, create_message(poll))
 
                 # Save data to file
@@ -438,7 +509,7 @@ async def remove_vote(message):
 
 
 # Show a pole in a new message
-async def refresh_poll(message):
+async def refresh_poll(message, channel):
     channel = channel_list[message.channel.id]
 
     poll_id = message.content.replace('!refresh ', '')
@@ -495,22 +566,25 @@ async def help_message(message):
 # region Auxiliary Functions
 
 # Creates a message given a poll
-def create_message(poll):
+def create_message(poll, options):
     msg = '**%s** (poll_id: %s)' % (poll.question, poll.poll_id)
 
-    for i in range(len(poll.options)):
-        msg += '\n%d - %s' % ((i + 1), poll.options[i])
+    for i in range(len(options)):
+        msg += '\n%d - %s' % ((i + 1), options[i].option)
 
-        if len(poll.participants[i]) > 0:
+        # Get all votes for that option
+        votes = session.query(Vote).filter(Vote.option_id == options[i].id).all()
+
+        if len(votes) > 0:
             msg += ':'
 
             # Show the number of voters for the option
             if poll.only_numbers:
-                msg += ' %d vote.' % len(poll.participants[i])
+                msg += ' %d vote.' % len(votes)
             # Show the names of the voters for the option
             else:
-                for p in poll.participants[i]:
-                    msg += ' %s' % p.mention
+                for v in votes:
+                    msg += ' %s' % v.participant_id
 
     if poll.new_options:
         msg += '\n(New options can be suggested!)'
@@ -522,51 +596,22 @@ def create_message(poll):
 
 
 # Remove the previous vote of a participant
-def remove_prev_vote(poll, participant):
-    prev_vote = -1
+def remove_prev_vote(options, participant):
+    ids = []
 
-    for i in range(len(poll.options)):
-        if participant in poll.participants[i]:
-            prev_vote = i
-            break
+    for o in options:
+        ids.append(o.id)
 
-    # If it had voted for something else
-    # remove the previous vote
-    if prev_vote != -1:
-        poll.participants[prev_vote].remove(participant)
+    # Get the previous vote
+    prev_vote = session.query(Vote).filter(Vote.option_id.in_(ids)).filter(Vote.participant_id == participant).first()
 
-
-# Get the poll with the given poll id
-def get_poll(channel, poll_id):
-    for i in range(len(channel.poll_list) - 1, -1, -1):
-        if channel.poll_list[i].poll_id == poll_id:
-            return channel.poll_list[i], i
-
-    return None, -1
-
-
-# endregion
-
-# region File Handling
-
-def save_data():
-    file = open('data.bin', 'wb')
-    pickle.dump(channel_list, file)
-    file.close()
-
-
-def load_data():
-    global channel_list
-
-    try:
-        file = open('data.bin', 'rb')
-        channel_list = pickle.load(file)
-        file.close()
-    except FileNotFoundError:
-        print ('Unable to open data file!')
+    # If it had voted for something else remove it
+    if prev_vote is not None:
+        session.delete(prev_vote)
 
 
 # endregion
 
 
+# Run the bot
 client.run(token)
