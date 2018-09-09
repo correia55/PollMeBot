@@ -42,10 +42,11 @@ class Poll(base):
     new_options = Column(Boolean)
     message_id = Column(String)
     channel_id = Column(Integer, ForeignKey('Channel.id'))
+    server_id = Column(String)
 
     options = relationship('Option', cascade='all,delete')
 
-    def __init__(self, poll_id, author, question, multiple_options, only_numbers, new_options, channel_id):
+    def __init__(self, poll_id, author, question, multiple_options, only_numbers, new_options, channel_id, server_id):
         self.poll_id = poll_id
         self.author = author
         self.question = question
@@ -53,6 +54,7 @@ class Poll(base):
         self.only_numbers = only_numbers
         self.new_options = new_options
         self.channel_id = channel_id
+        self.server_id = server_id
 
 
 class Option(base):
@@ -133,7 +135,9 @@ async def on_message(message):
         await configure_channel(message, channel)
     elif message.content.startswith('!poll_edit'):
         await edit_poll(message, channel)
-    elif message.content.startswith('!poll_remove '):
+    elif message.content.startswith('!poll_close '):  # Extra space is necessary
+        await close_poll(message, channel)
+    elif message.content.startswith('!poll_remove '):  # Extra space is necessary
         await remove_poll(message, channel)
     elif message.content.startswith('!poll'):
         await create_poll(message, channel)
@@ -246,16 +250,16 @@ async def create_poll(message, channel):
         session.delete(poll)
         session.flush()
 
-    # Limit the number of polls to 5 per channel
-    while session.query(Poll).filter(Poll.channel_id == channel.id).count() >= 5:
-        poll = session.query(Poll).first()
+    # Limit the number of polls to 5 per server
+    while session.query(Poll).filter(Poll.server_id == message.server.id).count() >= 5:
+        poll = session.query(Poll).filter(Poll.server_id == message.server.id).first()
 
         session.delete(poll)
         session.flush()
 
     # Create the new poll
     new_poll = Poll(poll_comps[0], message.author.mention, poll_comps[1], multiple_options, only_numbers, new_options,
-                    channel.id)
+                    channel.id, message.server.id)
 
     session.add(new_poll)
 
@@ -354,6 +358,35 @@ async def edit_poll(message, channel):
     c = client.get_channel(channel.discord_id)
     m = await client.get_message(c, poll.message_id)
     await client.edit_message(m, create_message(poll, options))
+
+    session.commit()
+
+    # Delete the message that contains this command
+    if channel.delete_commands:
+        await client.delete_message(message)
+
+
+# Close a poll
+async def close_poll(message, channel):
+    if channel is None:
+        return
+
+    poll_id = message.content.replace('!poll_close ', '')
+
+    # Select the current poll
+    poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
+
+    # Edit the message with the poll
+    if poll is not None:
+        # Only the author can close the poll
+        if poll.author == message.author.mention:
+            options = session.query(Option).filter(Option.poll_id == poll.id).all()
+
+            c = client.get_channel(channel.discord_id)
+            m = await client.get_message(c, poll.message_id)
+
+            await client.edit_message(m, create_message(poll, options, closed=True))
+            session.delete(poll)
 
     session.commit()
 
@@ -611,8 +644,11 @@ async def help_message(message, channel):
 # region Auxiliary Functions
 
 # Creates a message given a poll
-def create_message(poll, options):
-    msg = '**%s** (poll_id: %s)' % (poll.question, poll.poll_id)
+def create_message(poll, options, closed=False):
+    if closed:
+        msg = '**%s** (Closed)' % poll.question
+    else:
+        msg = '**%s** (poll_id: %s)' % (poll.question, poll.poll_id)
 
     for i in range(len(options)):
         msg += '\n%d - %s' % ((i + 1), options[i].option)
@@ -631,11 +667,12 @@ def create_message(poll, options):
                 for v in votes:
                     msg += ' %s' % v.participant_id
 
-    if poll.new_options:
-        msg += '\n(New options can be suggested!)'
+    if not closed:
+        if poll.new_options:
+            msg += '\n(New options can be suggested!)'
 
-    if poll.multiple_options:
-        msg += '\n(You can vote on multiple options!)'
+        if poll.multiple_options:
+            msg += '\n(You can vote on multiple options!)'
 
     return msg
 

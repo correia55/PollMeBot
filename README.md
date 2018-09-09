@@ -4,9 +4,7 @@ A bot, for Discord, that allows you and your friends to create polls and vote.
 
 ## Available Commands
 
-Commands start with an exclamation mark (!) followed by the command and then each 
-parameter separated by a space. If a parameter contains spaces, it should be written
-within quotation marks ("), otherwise it will be split into multiple parameters.
+Commands start with an exclamation mark (!) followed by the command and then each parameter separated by a space. If a parameter contains spaces, it should be written within quotation marks ("), otherwise it will be split into multiple parameters.
 
 ### Configure Channel
 
@@ -30,20 +28,16 @@ Available *settings* for the channel configuration include:
 
 If no responses are provided, the default responses are Yes and No.
 
-The poll_id is used for referring to this specific poll. It can be any string without
- spaces.
+The poll_id is used for referring to this specific poll. It can be any string without spaces.
 
-The first parameter that does not start with a dash is considered to be the poll_id,
- the next one the question and all of the following, the response options.
-If any of these parameters contains spaces, then they should be surrounded by 
-quotation marks.
+The first parameter that does not start with a dash is considered to be the poll_id, the next one the question and all of the following, the response options. If any of these parameters contains spaces, then they should be surrounded by quotation marks.
 
 Available *settings* for the poll include:
 * -m - each user may vote in multiple options;
 * -o - each option displays only the number of votes;
 * -n - users can vote in new options.
 
-Note: the number of active polls per channel is limited to 5.
+**Note:** the number of active polls per server is limited to 5. Creating a new poll when 5 other polls are already created will result in the deactivation of the oldest poll. To prevent this, close inactive polls manually (check **Close Poll** or **Remove Poll**).
 
 #### Example
 !poll -n party2night "Let's party tonight?" Yes No "Only after midnight"
@@ -58,13 +52,20 @@ Note: the number of active polls per channel is limited to 5.
 
 A poll can only be edited by its owner.
 
-All parameters work in the same way as in **Create Poll**, however if the number of 
-options is different from the one in the poll, the new options are ignored.
+All parameters work in the same way as in **Create Poll**, however if the number of options is different from the one in the poll, the new options are ignored.
 
 #### Example
 !poll_edit -n party2night "Let's party tonight at the pub?" Yes No "Only after midnight"
 
 ![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/edit_poll.gif)
+
+### Close Poll
+
+```
+!poll_close poll_id
+```
+
+A poll can only be closed by its owner.
 
 ### Remove Poll
 
@@ -72,7 +73,7 @@ options is different from the one in the poll, the new options are ignored.
 !poll_remove poll_id
 ```
 
-A poll can only be removed by its owner.
+A poll can only be removed by its owner. The difference between **Close Poll** and **Remove Poll** is that remove will also delete the message associated with the poll, while close only prevents interactions with it.
 
 #### Example
 !poll_remove party2night
@@ -84,8 +85,7 @@ A poll can only be removed by its owner.
 !refresh poll_id
 ```
 
-Refreshing a poll means a new message will be created with the poll, saving you the 
-trouble of trying to find the previous location of the poll.
+Refreshing a poll means a new message will be created with the poll, saving you the trouble of trying to find the previous location of the poll.
 
 #### Example
 !refresh party2night
@@ -96,8 +96,7 @@ trouble of trying to find the previous location of the poll.
 !vote poll_id option
 ```
 
-If the poll allows for new options to be created, the command followed by the new 
-option within quotation marks can be used instead:
+If the poll allows for new options to be created, the command followed by the new option within quotation marks can be used instead:
 ```
 !vote poll_id "New option"
 ```
