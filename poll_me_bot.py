@@ -8,9 +8,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy import Column, String, Integer, Boolean, ForeignKey
 
-engine = create_engine('postgresql://acorreia:1234@localhost:5432/poll-me-bot')
-Session = sessionmaker(bind=engine)
+# region DB Classes
 
+# Base class for DB Classes
 base = declarative_base()
 
 
@@ -80,6 +80,19 @@ class Vote(base):
         self.option_id = option_id
         self.participant_id = participant_id
 
+# endregion
+
+
+# region Initialization
+
+database_url = os.environ.get('DATABASE_URL', None)
+
+if database_url is None:
+    print('Unable to find database url!')
+    exit(1)
+
+engine = create_engine(database_url)
+Session = sessionmaker(bind=engine)
 
 # Create tables if they don't exist
 if not engine.dialect.has_table(engine, 'Channel'):
@@ -99,6 +112,8 @@ if token is None:
 # Create a client
 client = discord.Client()
 
+# endregion
+
 
 # region Events
 
@@ -114,35 +129,22 @@ async def on_message(message):
     # Get the channel information from the DB
     channel = session.query(Channel).filter(Channel.discord_id == message.channel.id).first()
 
-    # Configure the channel
     if message.content.startswith('!poll_me_channel'):
-        await configure_channel(message)
-    # Edit a poll
+        await configure_channel(message, channel)
     elif message.content.startswith('!poll_edit'):
-        if channel is not None:
-            await edit_poll(message, channel)
-    # Remove a poll
+        await edit_poll(message, channel)
     elif message.content.startswith('!poll_remove '):
-        if channel is not None:
-            await remove_poll(message, channel)
-    # Start a new poll
+        await remove_poll(message, channel)
     elif message.content.startswith('!poll'):
-        await create_poll(message)
-    # Vote in a poll
+        await create_poll(message, channel)
     elif message.content.startswith('!vote '):  # Extra space is necessary
-        if channel is not None:
-            await vote_poll(message, channel)
-    # Remove a vote from a poll
+        await vote_poll(message, channel)
     elif message.content.startswith('!unvote'):
-        if channel is not None:
-            await remove_vote(message, channel)
-    # Show the current poll in a new message
+        await remove_vote(message, channel)
     elif message.content.startswith('!refresh '):  # Extra space is necessary
-        if channel is not None:
-            await refresh_poll(message, channel)
-    # Show a help me message
+        await refresh_poll(message, channel)
     elif message.content.startswith('!help_me_poll'):
-        await help_message(message)
+        await help_message(message, channel)
 
     # Delete all messages
     if channel is not None:
@@ -152,15 +154,17 @@ async def on_message(message):
 
 # endregion
 
+
 # region Commands
 
 # Configure the channel
-async def configure_channel(message):
+async def configure_channel(message, channel):
     channel_id = message.channel.id
+
+    # Get the list of components in the message
     comps = message.content.split(' ')
 
-    channel = session.query(Channel).filter(Channel.discord_id == channel_id).first()
-
+    # If the command is invalid
     if len(comps) != 2:
         if channel is not None:
             # Delete the message that contains this command
@@ -169,6 +173,7 @@ async def configure_channel(message):
 
         return
 
+    # Filter the chosen setting
     delete_commands = False
     delete_all = False
 
@@ -197,10 +202,8 @@ async def configure_channel(message):
 
 
 # Create a new poll
-async def create_poll(message):
+async def create_poll(message, channel):
     channel_id = message.channel.id
-
-    channel = session.query(Channel).filter(Channel.discord_id == channel_id).first()
 
     # Create channel if it doesn't already exist
     if channel is None:
@@ -227,8 +230,28 @@ async def create_poll(message):
         else:
             poll_comps.append(comps[i])
 
+    # If it is an invalid command
     if len(poll_comps) < 2:
+        # Delete the message that contains this command
+        if channel.delete_commands:
+            await client.delete_message(message)
+
         return
+
+    # Get the poll with this id
+    poll = session.query(Poll).filter(Poll.poll_id == poll_comps[0]).first()
+
+    # If a poll with the same id already exists, delete it
+    if poll is not None:
+        session.delete(poll)
+        session.flush()
+
+    # Limit the number of polls to 5 per channel
+    while session.query(Poll).filter(Poll.channel_id == channel.id).count() >= 5:
+        poll = session.query(Poll).first()
+
+        session.delete(poll)
+        session.flush()
 
     # Create the new poll
     new_poll = Poll(poll_comps[0], message.author.mention, poll_comps[1], multiple_options, only_numbers, new_options,
@@ -247,12 +270,6 @@ async def create_poll(message):
 
     session.add_all(options)
 
-    # Limit the number of polls to 5 per channel
-    if session.query(Poll).filter(Poll.channel_id == channel.id).count() == 5:
-        poll = session.query(Poll).first()
-
-        session.delete(poll)
-
     # Create the message with the poll
     msg = await client.send_message(message.channel, create_message(new_poll, options))
 
@@ -267,6 +284,9 @@ async def create_poll(message):
 
 # Edit a poll
 async def edit_poll(message, channel):
+    if channel is None:
+        return
+
     # Split the command using spaces, ignoring those between quotation marks
     comps = shlex.split(message.content)[1:]
 
@@ -339,6 +359,9 @@ async def edit_poll(message, channel):
 
 # Remove a poll
 async def remove_poll(message, channel):
+    if channel is None:
+        return
+
     poll_id = message.content.replace('!poll_remove ', '')
 
     # Select the current poll
@@ -363,6 +386,9 @@ async def remove_poll(message, channel):
 
 # Vote in a poll
 async def vote_poll(message, channel):
+    if channel is None:
+        return
+
     # Split the command using spaces, ignoring those between quotation marks
     option = message.content.replace('!vote ', '')
 
@@ -461,7 +487,8 @@ async def vote_poll(message, channel):
 
 # Remove a vote from a pole
 async def remove_vote(message, channel):
-    channel = channel_list[message.channel.id]
+    if channel is None:
+        return
 
     # Split the command using spaces
     option = message.content.split(' ')
@@ -475,8 +502,8 @@ async def remove_vote(message, channel):
     poll_id = option[1]
     option = option[2]
 
-    # Select the current poll for that channel
-    poll, poll_pos = get_poll(channel, poll_id)
+    # Select the current poll
+    poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
 
     if poll is None:
         # Delete the message that contains this command
@@ -485,19 +512,27 @@ async def remove_vote(message, channel):
 
         return
 
+    options = session.query(Option).filter(Option.poll_id == poll.id).all()
+
     # Option is a number
     try:
         option = int(option)
 
         # If it is a valid option
         if 0 < option <= len(poll.options):
-            if message.author.mention in poll.participants[option - 1]:
-                # Remove the vote from this option
-                poll.participants[option - 1].remove(message.author.mention)
-                await client.edit_message(poll.message_id, create_message(poll))
+            vote = session.query(Vote)\
+                .filter(Vote.option_id == options[option - 1].id)\
+                .filter(Vote.participant_id == message.author.mention).first()
 
-                # Save data to file
-                save_data()
+            if vote is not None:
+                # Remove the vote from this option
+                session.delete(vote)
+                session.commit()
+
+                # Edit the message
+                c = client.get_channel(channel.discord_id)
+                m = await client.get_message(c, poll.message_id)
+                await client.edit_message(m, create_message(poll, options))
 
     # Option is not a number
     except ValueError:
@@ -510,19 +545,22 @@ async def remove_vote(message, channel):
 
 # Show a pole in a new message
 async def refresh_poll(message, channel):
-    channel = channel_list[message.channel.id]
+    if channel is None:
+        return
 
     poll_id = message.content.replace('!refresh ', '')
 
-    # Select the current poll for that channel
-    poll, poll_pos = get_poll(channel, poll_id)
+    # Select the current poll
+    poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
 
     # Create the message with the poll
     if poll is not None:
-        poll.message_id = await client.send_message(message.channel, create_message(poll))
+        options = session.query(Option).filter(Option.poll_id == poll.id).all()
 
-        # Save data to file
-        save_data()
+        msg = await client.send_message(message.channel, create_message(poll, options))
+        poll.message_id = msg.id
+
+        session.commit()
 
     # Delete the message that contains this command
     if channel.delete_commands:
@@ -530,14 +568,15 @@ async def refresh_poll(message, channel):
 
 
 # Show a help message with the available commands
-async def help_message(message):
+async def help_message(message, channel):
     channel_id = message.channel.id
 
     # Create channel if it doesn't already exist
-    if channel_id not in channel_list:
-        channel_list[channel_id] = Channel()
+    if channel is None:
+        channel = Channel(channel_id)
 
-    channel = channel_list[channel_id]
+        session.add(channel)
+        session.commit()
 
     msg = 'Poll Me Bot Help\n' \
           '----------------\n' \
@@ -548,7 +587,7 @@ async def help_message(message):
           '(This message will self-destruct in 30 seconds.)'
 
     # Create the message with the help
-    message_id = await client.send_message(message.channel, msg)
+    msg = await client.send_message(message.channel, msg)
 
     # Delete the message that contains this command
     if channel.delete_commands:
@@ -558,10 +597,11 @@ async def help_message(message):
     await asyncio.sleep(30)
 
     # Delete this message
-    await client.delete_message(message_id)
+    await client.delete_message(msg)
 
 
 # endregion
+
 
 # region Auxiliary Functions
 
