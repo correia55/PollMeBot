@@ -160,7 +160,7 @@ async def on_message(message):
 
     # Delete all messages
     if channel is not None:
-        if channel.delete_all and message.author.mention != client.user:
+        if channel.delete_all and message.author != client.user:
             await client.delete_message(message)
 
 
