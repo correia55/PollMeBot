@@ -19,13 +19,15 @@ class Channel(base):
 
     id = Column(Integer, primary_key=True)
     discord_id = Column(String, unique=True)
+    server_id = Column(String)
     delete_commands = Column(Boolean)
     delete_all = Column(Boolean)
 
     polls = relationship('Poll', cascade='all,delete')
 
-    def __init__(self, discord_id, delete_commands=False, delete_all=False):
+    def __init__(self, discord_id, server_id, delete_commands=False, delete_all=False):
         self.discord_id = discord_id
+        self.server_id = server_id
         self.delete_commands = delete_commands
         self.delete_all = delete_all
 
@@ -114,6 +116,9 @@ if token is None:
 # Create a client
 client = discord.Client()
 
+# Time between checks for deleted messages and channels
+CHECK_DELETED_WAIT_TIME = 43200
+
 # endregion
 
 
@@ -123,6 +128,9 @@ client = discord.Client()
 @client.event
 async def on_ready():
     print('The bot is ready to poll!\n-------------------------')
+
+    # Coroutine to check if the messages still exist
+    await check_messages_exist()
 
 
 # When a message is written in Discord
@@ -191,7 +199,7 @@ async def configure_channel(message, channel):
 
     # Create or modify the channel with the correct configurations
     if channel is None:
-        channel = Channel(channel_id, delete_commands, delete_all)
+        channel = Channel(channel_id, message.server.id, delete_commands, delete_all)
 
         session.add(channel)
     else:
@@ -211,7 +219,7 @@ async def create_poll(message, channel):
 
     # Create channel if it doesn't already exist
     if channel is None:
-        channel = Channel(channel_id)
+        channel = Channel(channel_id, message.server.id)
         session.add(channel)
 
     # Split the command using spaces, ignoring those between quotation marks
@@ -611,7 +619,7 @@ async def help_message(message, channel):
 
     # Create channel if it doesn't already exist
     if channel is None:
-        channel = Channel(channel_id)
+        channel = Channel(channel_id, message.server.id)
 
         session.add(channel)
         session.commit()
@@ -690,6 +698,39 @@ def remove_prev_vote(options, participant):
     # If it had voted for something else remove it
     if prev_vote is not None:
         session.delete(prev_vote)
+
+
+# Check all messages and channels to see if they still exist
+async def check_messages_exist():
+
+    while True:
+        channels = session.query(Channel).all()
+
+        # Delete all channels that no longer exist
+        for channel in channels:
+            c = client.get_channel(channel.discord_id)
+
+            if c is None:
+                session.delete(channel)
+
+        session.flush()
+
+        polls = session.query(Poll).all()
+
+        # Delete all polls that no longer exist
+        for poll in polls:
+            channel = session.query(Channel).filter(Channel.id == poll.channel_id).first()
+
+            c = client.get_channel(channel.discord_id)
+
+            try:
+                await client.get_message(c, poll.message_id)
+            except discord.errors.NotFound:
+                session.delete(poll)
+
+        session.commit()
+
+        await asyncio.sleep(CHECK_DELETED_WAIT_TIME)
 
 
 # endregion
