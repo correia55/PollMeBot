@@ -264,9 +264,14 @@ async def create_poll(message, channel):
 
     options = []
 
-    # Create the options
-    for option in poll_comps[2:]:
-        options.append(Option(new_poll.id, option))
+    if len(poll_comps[2:]) != 0:
+        # Create the options
+        for option in poll_comps[2:]:
+            options.append(Option(new_poll.id, option))
+    # If no options were provided, then create the default Yes and No
+    else:
+        options.append(Option(new_poll.id, 'Yes'))
+        options.append(Option(new_poll.id, 'No'))
 
     session.add_all(options)
 
