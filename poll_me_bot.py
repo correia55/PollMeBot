@@ -267,6 +267,13 @@ async def create_poll(message, channel):
     while session.query(Poll).filter(Poll.server_id == message.server.id).count() >= 5:
         poll = session.query(Poll).filter(Poll.server_id == message.server.id).first()
 
+        # Edit the corresponding message to display as closed
+        options = session.query(Option).filter(Option.poll_id == poll.id).all()
+
+        c = client.get_channel(channel.discord_id)
+        m = await client.get_message(c, poll.message_id)
+        await client.edit_message(m, create_message(poll, options, selected_options=list(range(1, len(options) + 1))))
+
         session.delete(poll)
         session.flush()
 
