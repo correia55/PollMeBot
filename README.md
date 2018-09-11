@@ -26,7 +26,7 @@ Available *settings* for the channel configuration include:
 !poll <settings> poll_id question <response_options>
 ```
 
-If no responses are provided, the default responses are Yes and No.
+If no response options are provided, the default responses are Yes and No.
 
 The poll_id is used for referring to this specific poll. It can be any string without spaces.
 
@@ -62,8 +62,9 @@ All parameters work in the same way as in **Create Poll**, however if the number
 ### Close Poll
 
 ```
-!poll_close poll_id
+!poll_close poll_id selected_options
 ```
+The selected_options are a list options separated by comma (,), which will be displayed in the closed poll.
 
 A poll can only be closed by its owner.
 
@@ -93,8 +94,9 @@ Refreshing a poll means a new message will be created with the poll, saving you 
 ### Vote Poll
 
 ```
-!vote poll_id option
+!vote poll_id selected_options
 ```
+The selected_options are a list options separated by comma (,).
 
 If the poll allows for new options to be created, the command followed by the new option within quotation marks can be used instead:
 ```
