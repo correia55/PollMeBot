@@ -112,6 +112,17 @@ If the poll allows for new options to be created, the command followed by the ne
 
 ![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/vote_new_poll.gif)
 
+### Unvote Poll
+
+```
+!unvote poll_id selected_option
+```
+
+Remove a vote from an option in the poll.
+
+#### Example
+!unvote party2night 3
+
 ### Help Poll
 
 ```
