@@ -380,8 +380,13 @@ async def edit_poll(command, db_channel):
 
     # Edit message
     c = client.get_channel(db_channel.discord_id)
-    m = await client.get_message(c, poll.message_id)
-    await client.edit_message(m, create_message(poll, options))
+
+    try:
+        m = await client.get_message(c, poll.message_id)
+
+        await client.edit_message(m, create_message(poll, options))
+    except discord.errors.NotFound:
+        session.delete(poll)
 
     session.commit()
 
@@ -463,9 +468,14 @@ async def remove_poll(command, db_channel):
         # Only the author can remove the poll
         if poll.author == command.author.mention:
             c = client.get_channel(db_channel.discord_id)
-            m = await client.get_message(c, poll.message_id)
 
-            await client.delete_message(m)
+            try:
+                m = await client.get_message(c, poll.message_id)
+
+                await client.delete_message(m)
+            except discord.errors.NotFound:
+                pass
+
             session.delete(poll)
 
     session.commit()
@@ -562,13 +572,16 @@ async def vote_poll(command, db_channel):
 
                 poll_edited = True
 
-    session.commit()
-
     # Edit the message
     if poll_edited:
         c = client.get_channel(db_channel.discord_id)
-        m = await client.get_message(c, poll.message_id)
-        await client.edit_message(m, create_message(poll, options))
+        try:
+            m = await client.get_message(c, poll.message_id)
+            await client.edit_message(m, create_message(poll, options))
+        except discord.errors.NotFound:
+            session.delete(poll)
+
+    session.commit()
 
 
 async def remove_vote(command, db_channel):
@@ -616,12 +629,18 @@ async def remove_vote(command, db_channel):
             if vote is not None:
                 # Remove the vote from this option
                 session.delete(vote)
-                session.commit()
 
                 # Edit the message
                 c = client.get_channel(db_channel.discord_id)
-                m = await client.get_message(c, poll.message_id)
-                await client.edit_message(m, create_message(poll, options))
+
+                try:
+                    m = await client.get_message(c, poll.message_id)
+
+                    await client.edit_message(m, create_message(poll, options))
+                except discord.errors.NotFound:
+                    session.delete(poll)
+
+                session.commit()
 
     # Option is not a number
     except ValueError:
@@ -811,8 +830,13 @@ async def close_poll(poll, db_channel, options, selected_options):
 
     # Edit the message to display as closed
     c = client.get_channel(db_channel.discord_id)
-    m = await client.get_message(c, poll.message_id)
-    await client.edit_message(m, create_message(poll, options, selected_options=selected_options))
+
+    try:
+        m = await client.get_message(c, poll.message_id)
+
+        await client.edit_message(m, create_message(poll, options, selected_options=selected_options))
+    except discord.errors.NotFound:
+        pass
 
     # Delete the poll from the DB
     session.delete(poll)
