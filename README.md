@@ -17,6 +17,8 @@ Available *settings* for the channel configuration include:
 * -da - all messages will be deleted in this channel;
 * -ka - all messages are kept in this channel, nothing is deleted.
 
+A channel can only be configure by an administrator.
+
 #### Example
 !poll_me_channel -da
 
@@ -35,7 +37,8 @@ The first parameter that does not start with a dash is considered to be the poll
 Available *settings* for the poll include:
 * -m - each user may vote in multiple options;
 * -o - each option displays only the number of votes;
-* -n - users can vote in new options.
+* -n - users can vote in new options;
+* -y - confirm the creation of the poll. This is necessary when there's a poll with the same id or the poll limit has been reached for that server.
 
 **Note:** the number of active polls per server is limited to 5. Creating a new poll when 5 other polls are already created will result in the deactivation of the oldest poll. To prevent this, close inactive polls manually (check **Close Poll** or **Remove Poll**).
 
@@ -137,9 +140,14 @@ Help creates a temporary message that shows examples of basic commands.
 
 ![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/help_me_poll.gif)
 
-## Author
+## Contributing
 
-**Acácio Correia**
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
+
+## Author and Contributors
+
+* **Acácio Correia**
+* **[José Manteigueiro](https://github.com/jmanteigueiro)**
 
 ## License
 

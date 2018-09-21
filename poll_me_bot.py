@@ -175,7 +175,7 @@ async def on_message(message):
 
 # region Commands
 
-async def configure_channel(command, db_channel, ):
+async def configure_channel(command, db_channel):
     """
     Configure a channel with the given settings.
     If this channel does not yet exit in the DB, then create it.
@@ -183,6 +183,13 @@ async def configure_channel(command, db_channel, ):
     :param command: the command used.
     :param db_channel: the corresponding channel entry in the DB.
     """
+
+    # Make sure the user changing the channel settings is an admin
+    if not command.author.server_permissions.administrator:
+        msg = 'Only server administrators can change a channel\'s settings.'
+
+        await send_temp_message(msg, command.channel)
+        return
 
     # The id of the Discord channel where the message was sent
     channel_id = command.channel.id
@@ -202,6 +209,9 @@ async def configure_channel(command, db_channel, ):
         delete_commands = True
     elif params[1] == '-da':
         delete_all = True
+    elif params[1] == '-ka':
+        delete_all = False
+        delete_commands = False
 
     # Create or modify the channel with the correct configurations
     if db_channel is None:
@@ -229,7 +239,7 @@ async def create_poll(command, db_channel):
     # The id of the Discord server where the message was sent
     server_id = command.server.id
 
-    # Create channel if it doesn't already exist
+    # Create channel if it does not already exist
     if db_channel is None:
         db_channel = Channel(channel_id)
 
@@ -241,6 +251,9 @@ async def create_poll(command, db_channel):
     multiple_options = False
     only_numbers = False
     new_options = False
+
+    # Confirmation is necessary when there is a need to close a poll before this one is created
+    confirmation = False
 
     poll_params = []
 
@@ -255,12 +268,17 @@ async def create_poll(command, db_channel):
                 only_numbers = True
             if params[i].__contains__('n'):
                 new_options = True
+            if params[i].__contains__('y'):
+                confirmation = True
         else:
             # Add all non configuration parameters, ignoring quotation marks
             poll_params.append(params[i].replace('"', ''))
 
     # If the command has an invalid number of parameters
     if len(poll_params) < 2:
+        msg = 'Invalid parameters in command: **%s**' % command.content
+
+        await send_temp_message(msg, command.channel)
         return
 
     # Get the poll with this id
@@ -268,6 +286,14 @@ async def create_poll(command, db_channel):
 
     # If a poll with the same id already exists, close it
     if poll is not None:
+        # Confirmation required before closing a poll
+        if not confirmation:
+            msg = 'A poll with that id already exists add **-y** to your command to confirm the closing of the ' \
+                  'previous poll.\nYour command: **%s**' % command.content
+
+            await send_temp_message(msg, command.channel)
+            return
+
         # Get all options available in the poll
         options = session.query(Option).filter(Option.poll_id == poll.id).all()
 
@@ -275,6 +301,15 @@ async def create_poll(command, db_channel):
 
     # Limit the number of polls to 5 per server
     while session.query(Poll).filter(Poll.server_id == server_id).count() >= 5:
+        # Confirmation required before closing other polls
+        if not confirmation:
+            msg = 'The server you\'re in has reached its poll limit, creating another poll will force the closing of ' \
+                  'the oldest poll still active. Add **-y** to your command to confirm the closing of the ' \
+                  'previous poll.\nYour command: **%s**' % command.content
+
+            await send_temp_message(msg, command.channel)
+            return
+
         poll = session.query(Poll).filter(Poll.server_id == server_id).first()
 
         # Get all options available in the poll
@@ -322,6 +357,9 @@ async def edit_poll(command, db_channel):
 
     # If the channel does not exist in the DB
     if db_channel is None:
+        msg = 'There\'s no poll in this channel for you to edit!'
+
+        await send_temp_message(msg, command.channel)
         return
 
     # Get the list of parameters in the message
@@ -349,6 +387,9 @@ async def edit_poll(command, db_channel):
 
     # If the command has an invalid number of parameters
     if len(poll_params) < 2:
+        msg = 'Invalid parameters in command: **%s**' % command.content
+
+        await send_temp_message(msg, command.channel)
         return
 
     poll_id = poll_params[0]
@@ -358,10 +399,16 @@ async def edit_poll(command, db_channel):
 
     # If no poll was found with that id
     if poll is None:
+        msg = 'There\'s no poll with that id for you to edit.\nYour command: **%s**' % command.content
+
+        await send_temp_message(msg, command.channel)
         return
 
     # Only the author can edit
     if poll.author != command.author.mention:
+        msg = 'Only the author of a poll can edit it!'
+
+        await send_temp_message(msg, command.channel)
         return
 
     poll.question = poll_params[1]
@@ -402,6 +449,9 @@ async def close_poll_command(command, db_channel):
 
     # If the channel does not exist in the DB
     if db_channel is None:
+        msg = 'There\'s no poll in this channel for you to close!'
+
+        await send_temp_message(msg, command.channel)
         return
 
     # Get the list of parameters in the message
@@ -409,6 +459,9 @@ async def close_poll_command(command, db_channel):
 
     # If the command has an invalid number of parameters
     if len(params) != 3:
+        msg = 'Invalid parameters in command: **%s**' % command.content
+
+        await send_temp_message(msg, command.channel)
         return
 
     poll_id = params[1]
@@ -450,6 +503,9 @@ async def remove_poll(command, db_channel):
 
     # If the channel does not exist in the DB
     if db_channel is None:
+        msg = 'There\'s no poll in this channel for you to remove!'
+
+        await send_temp_message(msg, command.channel)
         return
 
     # Get the list of parameters in the message
@@ -457,6 +513,9 @@ async def remove_poll(command, db_channel):
 
     # If the command has an invalid number of parameters
     if len(params) != 2:
+        msg = 'Invalid parameters in command: **%s**' % command.content
+
+        await send_temp_message(msg, command.channel)
         return
 
     poll_id = params[1]
@@ -492,6 +551,9 @@ async def vote_poll(command, db_channel):
 
     # If the channel does not exist in the DB
     if db_channel is None:
+        msg = 'There\'s no poll in this channel for you to vote!'
+
+        await send_temp_message(msg, command.channel)
         return
 
     # Get the list of parameters in the message
@@ -499,6 +561,9 @@ async def vote_poll(command, db_channel):
 
     # If the command has an invalid number of parameters
     if len(params) != 3:
+        msg = 'Invalid parameters in command: **%s**' % command.content
+
+        await send_temp_message(msg, command.channel)
         return
 
     poll_id = params[1]
@@ -509,6 +574,9 @@ async def vote_poll(command, db_channel):
 
     # If no poll was found with that id
     if poll is None:
+        msg = 'There\'s no poll with that id for you to vote.\nYour command: **%s**' % command.content
+
+        await send_temp_message(msg, command.channel)
         return
 
     # Get all options available in the poll
@@ -595,6 +663,9 @@ async def remove_vote(command, db_channel):
 
     # If the channel does not exist in the DB
     if db_channel is None:
+        msg = 'There\'s no poll in this channel for you to unvote!'
+
+        await send_temp_message(msg, command.channel)
         return
 
     # Get the list of parameters in the message
@@ -602,6 +673,9 @@ async def remove_vote(command, db_channel):
 
     # If the command has an invalid number of parameters
     if len(params) != 3:
+        msg = 'Invalid parameters in command: **%s**' % command.content
+
+        await send_temp_message(msg, command.channel)
         return
 
     poll_id = params[1]
@@ -612,6 +686,9 @@ async def remove_vote(command, db_channel):
 
     # If no poll was found with that id
     if poll is None:
+        msg = 'There\'s no poll with that id for you to remove.\nYour command: **%s**' % command.content
+
+        await send_temp_message(msg, command.channel)
         return
 
     # Get all options available in the poll
@@ -658,6 +735,9 @@ async def refresh_poll(command, db_channel):
 
     # If the channel does not exist in the DB
     if db_channel is None:
+        msg = 'There\'s no poll in this channel for you to refresh!'
+
+        await send_temp_message(msg, command.channel)
         return
 
     # Get the list of parameters in the message
@@ -665,6 +745,9 @@ async def refresh_poll(command, db_channel):
 
     # If the command has an invalid number of parameters
     if len(params) != 2:
+        msg = 'Invalid parameters in command: **%s**' % command.content
+
+        await send_temp_message(msg, command.channel)
         return
 
     poll_id = params[1]
@@ -708,14 +791,7 @@ async def help_message(command, db_channel):
           '(More options and details are available at https://github.com/correia55/PollMeBot)\n' \
           '(This message will self-destruct in 30 seconds.)'
 
-    # Create the message with the help
-    msg = await client.send_message(command.channel, msg)
-
-    # Wait for 30 seconds
-    await asyncio.sleep(30)
-
-    # Delete this message
-    await client.delete_message(msg)
+    await send_temp_message(msg, command.channel)
 
 
 # endregion
@@ -881,6 +957,28 @@ async def check_messages_exist():
         print('Checking for deleted messages and channels...Done')
 
         await asyncio.sleep(CHECK_DELETED_WAIT_TIME)
+
+
+async def send_temp_message(message, channel, time=30):
+    """
+    Show a temporary message.
+
+    :param message: the message sent.
+    :param channel: the Discord channel.
+    :param time: the time before deleting the temporary message.
+    """
+
+    # Send the message
+    msg = await client.send_message(channel, message)
+
+    # Wait for 30 seconds
+    await asyncio.sleep(time)
+
+    # Delete this message
+    try:
+        await client.delete_message(msg)
+    except discord.errors.NotFound:
+        pass
 
 
 # endregion
