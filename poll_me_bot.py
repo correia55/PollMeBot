@@ -248,12 +248,13 @@ async def create_poll(command, db_channel):
     for i in range(len(params)):
         if i == 0:
             continue
-        elif params[i] == '-m':
-            multiple_options = True
-        elif params[i] == '-o':
-            only_numbers = True
-        elif params[i] == '-n':
-            new_options = True
+        if params[i].startswith('-'):
+            if params[i].__contains__('m'):
+                multiple_options = True
+            if params[i].__contains__('o'):
+                only_numbers = True
+            if params[i].__contains__('n'):
+                new_options = True
         else:
             # Add all non configuration parameters, ignoring quotation marks
             poll_params.append(params[i].replace('"', ''))
