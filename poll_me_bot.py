@@ -117,6 +117,9 @@ client = discord.Client()
 # Time between checks for deleted messages and channels
 CHECK_DELETED_WAIT_TIME = 43200
 
+# Limit number of polls per server
+POLL_LIMIT_SERVER = 10
+
 # endregion
 
 
@@ -163,12 +166,15 @@ async def on_message(message):
 
     # Delete all messages or just commands, depending on the channel settings
     if db_channel is not None:
-        # Delete all messages that were not sent by the bot
-        if db_channel.delete_all and message.author != client.user:
-            await client.delete_message(message)
-        # Delete all messages associated with a command
-        elif db_channel.delete_commands and is_command:
-            await client.delete_message(message)
+        try:
+            # Delete all messages that were not sent by the bot
+            if db_channel.delete_all and message.author != client.user:
+                await client.delete_message(message)
+            # Delete all messages associated with a command
+            elif db_channel.delete_commands and is_command:
+                await client.delete_message(message)
+        except discord.errors.NotFound:
+            pass
 
 # endregion
 
@@ -299,8 +305,8 @@ async def create_poll(command, db_channel):
 
         await close_poll(poll, db_channel, options, range(1, len(options) + 1))
 
-    # Limit the number of polls to 5 per server
-    while session.query(Poll).filter(Poll.server_id == server_id).count() >= 5:
+    # Limit the number of polls per server
+    while session.query(Poll).filter(Poll.server_id == server_id).count() >= POLL_LIMIT_SERVER:
         # Confirmation required before closing other polls
         if not confirmation:
             msg = 'The server you\'re in has reached its poll limit, creating another poll will force the closing of ' \
@@ -489,6 +495,10 @@ async def close_poll_command(command, db_channel):
                 await close_poll(poll, db_channel, options, selected_options)
 
                 session.commit()
+        else:
+            msg = 'There\'s no poll with that id for you to close.\nYour command: **%s**' % command.content
+
+            await send_temp_message(msg, command.channel)
     except ValueError:
         pass
 
@@ -537,6 +547,10 @@ async def remove_poll(command, db_channel):
                 pass
 
             session.delete(poll)
+    else:
+        msg = 'There\'s no poll with that id for you to close.\nYour command: **%s**' % command.content
+
+        await send_temp_message(msg, command.channel)
 
     session.commit()
 
