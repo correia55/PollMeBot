@@ -573,12 +573,16 @@ async def vote_poll(command, db_channel):
     # Get the list of parameters in the message
     params = parse_command_parameters(command.content)
 
-    # If the command has an invalid number of parameters
-    if len(params) != 3:
-        msg = 'Invalid parameters in command: **%s**' % command.content
+    if params.__contains__('-e') and len(params) == 5:
+        author = params[4]
+    else:
+        author = command.author.mention
+        # If the command has an invalid number of parameters
+        if len(params) != 3:
+            msg = 'Invalid parameters in command: **%s**' % command.content
 
-        await send_temp_message(msg, command.channel)
-        return
+            await send_temp_message(msg, command.channel)
+            return
 
     poll_id = params[1]
     option = params[2]
@@ -616,7 +620,7 @@ async def vote_poll(command, db_channel):
                 # Vote for an option if multiple options are allowed and he is yet to vote this option
                 if poll.multiple_options and vote is None:
                     # Add the new vote
-                    vote = Vote(options[option - 1].id, command.author.mention)
+                    vote = vote_on_poll(options, option, author)
                     session.add(vote)
 
                     poll_edited = True
@@ -628,7 +632,7 @@ async def vote_poll(command, db_channel):
                         remove_prev_vote(options, command.author.mention)
 
                         # Add the new vote
-                        vote = Vote(options[option - 1].id, command.author.mention)
+                        vote = vote_on_poll(options, option, author)
                         session.add(vote)
 
                         poll_edited = True
@@ -994,6 +998,9 @@ async def send_temp_message(message, channel, time=30):
     except discord.errors.NotFound:
         pass
 
+
+def vote_on_poll(options, option, author):
+    return Vote(options[option - 1].id, author)
 
 # endregion
 
