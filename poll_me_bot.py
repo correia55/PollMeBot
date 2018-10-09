@@ -143,7 +143,7 @@ async def on_message(message):
     is_command = True
 
     # Check if it is a command and call the correct function to treat it
-    if message.content.startswith('!poll_me_channel '):
+    if message.content.startswith('!poll_channel '):
         await configure_channel(message, db_channel)
     elif message.content.startswith('!poll_edit '):
         await edit_poll(message, db_channel)
@@ -151,14 +151,14 @@ async def on_message(message):
         await close_poll_command(message, db_channel)
     elif message.content.startswith('!poll_remove '):
         await remove_poll(message, db_channel)
+    elif message.content.startswith('!poll_refresh '):
+        await refresh_poll(message, db_channel)
     elif message.content.startswith('!poll '):
         await create_poll(message, db_channel)
     elif message.content.startswith('!vote '):
         await vote_poll(message, db_channel)
     elif message.content.startswith('!unvote '):
         await remove_vote(message, db_channel)
-    elif message.content.startswith('!refresh '):
-        await refresh_poll(message, db_channel)
     elif message.content.startswith('!help_me_poll'):
         await help_message(message, db_channel)
     else:
@@ -381,12 +381,13 @@ async def edit_poll(command, db_channel):
     for i in range(len(params)):
         if i == 0:
             continue
-        elif params[i] == '-m':
-            multiple_options = True
-        elif params[i] == '-o':
-            only_numbers = True
-        elif params[i] == '-n':
-            new_options = True
+        if params[i].startswith('-'):
+            if params[i].__contains__('m'):
+                multiple_options = True
+            if params[i].__contains__('o'):
+                only_numbers = True
+            if params[i].__contains__('n'):
+                new_options = True
         else:
             # Add all non configuration parameters, ignoring quotation marks
             poll_params.append(params[i].replace('"', ''))
@@ -428,9 +429,26 @@ async def edit_poll(command, db_channel):
     options = session.query(Option).filter(Option.poll_id == poll.id).all()
 
     # Update the options
-    if len(msg_options) == len(options):
-        for i in range(len(options)):
-            options[i].option = msg_options[i]
+    if len(msg_options) != 0:
+        if len(msg_options) >= len(options):
+            # Edit existing options
+            for i in range(len(options)):
+                options[i].option = msg_options[i]
+
+            # Add the new options
+            for i in range(len(options), len(msg_options)):
+                o = Option(poll.id, msg_options[i])
+
+                options.append(o)
+                session.add(o)
+        else:
+            # Edit existing options
+            for i in range(len(msg_options)):
+                options[i].option = msg_options[i]
+
+            # Remove unnecessary options
+            for i in range(len(msg_options), len(options)):
+                session.delete(options.pop(i))
 
     # Edit message
     c = client.get_channel(db_channel.discord_id)
@@ -880,10 +898,10 @@ def create_message(poll, options, selected_options=None):
 
     if selected_options is None:
         if poll.new_options:
-            msg += '\n(New options can be suggested!)'
+            msg += '\n(Mew options allowed!)'
 
         if poll.multiple_options:
-            msg += '\n(You can vote on multiple options!)'
+            msg += '\n(Multiple options allowed!)'
 
     return msg
 
