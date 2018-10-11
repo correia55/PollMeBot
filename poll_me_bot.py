@@ -77,10 +77,12 @@ class Vote(base):
     id = Column(Integer, primary_key=True)
     option_id = Column(Integer, ForeignKey('Option.id'))
     participant_id = Column(String)
+    external_user = Column(Boolean)
 
-    def __init__(self, option_id, participant_id):
+    def __init__(self, option_id, participant_id, external_user):
         self.option_id = option_id
         self.participant_id = participant_id
+        self.external_user = external_user
 
 # endregion
 
@@ -573,10 +575,13 @@ async def vote_poll(command, db_channel):
     # Get the list of parameters in the message
     params = parse_command_parameters(command.content)
 
+    # Check for external voters
     if params.__contains__('-e') and len(params) == 5:
         author = params[4]
+        external_flag = True
     else:
         author = command.author.mention
+        external_flag = False
         # If the command has an invalid number of parameters
         if len(params) != 3:
             msg = 'Invalid parameters in command: **%s**' % command.content
@@ -615,12 +620,12 @@ async def vote_poll(command, db_channel):
             if 0 < option <= len(poll.options):
                 vote = session.query(Vote)\
                     .filter(Vote.option_id == options[option - 1].id)\
-                    .filter(Vote.participant_id == command.author.mention).first()
+                    .filter(Vote.participant_id == author).first()
 
                 # Vote for an option if multiple options are allowed and he is yet to vote this option
                 if poll.multiple_options and vote is None:
                     # Add the new vote
-                    vote = vote_on_poll(options, option, author)
+                    vote = vote_on_poll(options, option, author, external_flag)
                     session.add(vote)
 
                     poll_edited = True
@@ -629,10 +634,10 @@ async def vote_poll(command, db_channel):
                 elif not poll.multiple_options:
                     # The participant didn't vote this option
                     if vote is None:
-                        remove_prev_vote(options, command.author.mention)
+                        remove_prev_vote(options, author)
 
                         # Add the new vote
-                        vote = vote_on_poll(options, option, author)
+                        vote = vote_on_poll(options, option, author, external_flag)
                         session.add(vote)
 
                         poll_edited = True
@@ -641,7 +646,7 @@ async def vote_poll(command, db_channel):
     except ValueError:
         if poll.new_options:
             if not poll.multiple_options:
-                remove_prev_vote(options, command.author.mention)
+                remove_prev_vote(options, author)
 
             if option[0] == '"' and option[-1] == '"':
                 # Remove quotation marks
@@ -654,7 +659,7 @@ async def vote_poll(command, db_channel):
 
                 session.flush()
 
-                vote = Vote(option.id, command.author.mention)
+                vote = vote_on_poll(options, options.__len__(), author, external_flag)
                 session.add(vote)
 
                 poll_edited = True
@@ -689,12 +694,19 @@ async def remove_vote(command, db_channel):
     # Get the list of parameters in the message
     params = parse_command_parameters(command.content)
 
-    # If the command has an invalid number of parameters
-    if len(params) != 3:
-        msg = 'Invalid parameters in command: **%s**' % command.content
+    # Check for external voters
+    if params.__contains__('-e') and len(params) == 5:
+        author = params[4]
+        external_flag = True
+    else:
+        author = command.author.mention
+        external_flag = False
+        # If the command has an invalid number of parameters
+        if len(params) != 3:
+            msg = 'Invalid parameters in command: **%s**' % command.content
 
-        await send_temp_message(msg, command.channel)
-        return
+            await send_temp_message(msg, command.channel)
+            return
 
     poll_id = params[1]
     option = params[2]
@@ -720,7 +732,7 @@ async def remove_vote(command, db_channel):
         if 0 < option <= len(poll.options):
             vote = session.query(Vote)\
                 .filter(Vote.option_id == options[option - 1].id)\
-                .filter(Vote.participant_id == command.author.mention).first()
+                .filter(Vote.participant_id == author).first()
 
             if vote is not None:
                 # Remove the vote from this option
@@ -999,8 +1011,8 @@ async def send_temp_message(message, channel, time=30):
         pass
 
 
-def vote_on_poll(options, option, author):
-    return Vote(options[option - 1].id, author)
+def vote_on_poll(options, option, author, external_flag):
+    return Vote(options[option - 1].id, author, external_flag)
 
 # endregion
 
