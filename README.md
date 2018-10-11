@@ -50,12 +50,12 @@ Available *settings* for the poll include:
 ### Edit Poll
 
 ```
-!poll_edit <settings> poll_id question responses
+!poll_edit <settings> poll_id question <responses>
 ```
 
 A poll can only be edited by its owner.
 
-All parameters work in the same way as in **Create Poll**, however if the number of options is different from the one in the poll, the new options are ignored.
+All parameters work in the same way as in **Create Poll**, with the responses being optional.
 
 #### Example
 !poll_edit -n party2night "Let's party tonight at the pub?" Yes No "Only after midnight"
