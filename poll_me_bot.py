@@ -77,12 +77,10 @@ class Vote(base):
     id = Column(Integer, primary_key=True)
     option_id = Column(Integer, ForeignKey('Option.id'))
     participant_id = Column(String)
-    external_user = Column(Boolean)
 
-    def __init__(self, option_id, participant_id, external_user):
+    def __init__(self, option_id, participant_id):
         self.option_id = option_id
         self.participant_id = participant_id
-        self.external_user = external_user
 
 # endregion
 
@@ -595,11 +593,9 @@ async def vote_poll(command, db_channel):
 
     # Check for external voters
     if params.__contains__('-e') and len(params) == 5:
-        author = params[4]
-        external_flag = True
+        author = params[4].replace('"', '')
     else:
         author = command.author.mention
-        external_flag = False
         # If the command has an invalid number of parameters
         if len(params) != 3:
             msg = 'Invalid parameters in command: **%s**' % command.content
@@ -643,7 +639,7 @@ async def vote_poll(command, db_channel):
                 # Vote for an option if multiple options are allowed and he is yet to vote this option
                 if poll.multiple_options and vote is None:
                     # Add the new vote
-                    vote = vote_on_poll(options, option, author, external_flag)
+                    vote = vote_on_poll(options, option, author)
                     session.add(vote)
 
                     poll_edited = True
@@ -655,7 +651,7 @@ async def vote_poll(command, db_channel):
                         remove_prev_vote(options, author)
 
                         # Add the new vote
-                        vote = vote_on_poll(options, option, author, external_flag)
+                        vote = vote_on_poll(options, option, author)
                         session.add(vote)
 
                         poll_edited = True
@@ -677,7 +673,7 @@ async def vote_poll(command, db_channel):
 
                 session.flush()
 
-                vote = vote_on_poll(options, options.__len__(), author, external_flag)
+                vote = vote_on_poll(options, options.__len__(), author)
                 session.add(vote)
 
                 poll_edited = True
@@ -714,11 +710,9 @@ async def remove_vote(command, db_channel):
 
     # Check for external voters
     if params.__contains__('-e') and len(params) == 5:
-        author = params[4]
-        external_flag = True
+        author = params[4].replace('"', '')
     else:
         author = command.author.mention
-        external_flag = False
         # If the command has an invalid number of parameters
         if len(params) != 3:
             msg = 'Invalid parameters in command: **%s**' % command.content
@@ -1029,8 +1023,8 @@ async def send_temp_message(message, channel, time=30):
         pass
 
 
-def vote_on_poll(options, option, author, external_flag):
-    return Vote(options[option - 1].id, author, external_flag)
+def vote_on_poll(options, option, author):
+    return Vote(options[option - 1].id, author)
 
 # endregion
 
