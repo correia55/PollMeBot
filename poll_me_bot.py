@@ -798,7 +798,18 @@ async def refresh_poll(command, db_channel):
     poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
 
     # Create the message with the poll
+    # and delete the previous message
     if poll is not None:
+        c = client.get_channel(db_channel.discord_id)
+
+        # Delete this message
+        try:
+            m = await client.get_message(c, poll.message_id)
+
+            await client.delete_message(m)
+        except discord.errors.NotFound:
+            pass
+
         options = session.query(Option).filter(Option.poll_id == poll.id).all()
 
         msg = await client.send_message(command.channel, create_message(poll, options))
