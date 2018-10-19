@@ -77,10 +77,12 @@ class Vote(base):
     id = Column(Integer, primary_key=True)
     option_id = Column(Integer, ForeignKey('Option.id'))
     participant_id = Column(String)
+    participant_mention = Column(String)
 
-    def __init__(self, option_id, participant_id):
+    def __init__(self, option_id, participant_id, participant_mention):
         self.option_id = option_id
         self.participant_id = participant_id
+        self.participant_mention = participant_mention
 
 # endregion
 
@@ -324,10 +326,16 @@ async def create_poll(command, db_channel):
         await close_poll(poll, db_channel, options, range(1, len(options) + 1))
 
     # Create the new poll
-    new_poll = Poll(poll_params[0], command.author.mention, poll_params[1], multiple_options, only_numbers, new_options,
+    new_poll = Poll(poll_params[0], command.author.id, poll_params[1], multiple_options, only_numbers, new_options,
                     db_channel.id, server_id)
 
     session.add(new_poll)
+
+    # Send a private message to each member in the server
+    for m in command.server.members:
+        if m != client.user and m.id != new_poll.author:
+            await client.send_message(m, 'A new poll (%s) has been created in %s!'
+                                      % (new_poll.poll_id, command.channel.mention))
 
     # Necessary for the options to get the poll id
     session.flush()
@@ -412,7 +420,7 @@ async def edit_poll(command, db_channel):
         return
 
     # Only the author can edit
-    if poll.author != command.author.mention:
+    if poll.author != command.author.id:
         msg = 'Only the author of a poll can edit it!'
 
         await send_temp_message(msg, command.channel)
@@ -507,8 +515,11 @@ async def close_poll_command(command, db_channel):
         # Edit the message with the poll
         if poll is not None:
             # Only the author can close the poll
-            if poll.author == command.author.mention:
+            if poll.author == command.author.id:
                 options = session.query(Option).filter(Option.poll_id == poll.id).all()
+
+                # Send a private message to all participants in the poll
+                await send_closed_poll_message(options, command.server, poll, command.channel)
 
                 await close_poll(poll, db_channel, options, selected_options)
 
@@ -554,7 +565,7 @@ async def remove_poll(command, db_channel):
     # Delete the message with the poll
     if poll is not None:
         # Only the author can remove the poll
-        if poll.author == command.author.mention:
+        if poll.author == command.author.id:
             c = client.get_channel(db_channel.discord_id)
 
             try:
@@ -593,15 +604,18 @@ async def vote_poll(command, db_channel):
 
     # Check for external voters
     if params.__contains__('-e') and len(params) == 5:
-        author = params[4].replace('"', '')
+        author_id = None
+        author_mention = params[4]
     else:
-        author = command.author.mention
         # If the command has an invalid number of parameters
         if len(params) != 3:
             msg = 'Invalid parameters in command: **%s**' % command.content
 
             await send_temp_message(msg, command.channel)
             return
+
+        author_id = command.author.id
+        author_mention = command.author.mention
 
     poll_id = params[1]
     option = params[2]
@@ -634,12 +648,12 @@ async def vote_poll(command, db_channel):
             if 0 < option <= len(poll.options):
                 vote = session.query(Vote)\
                     .filter(Vote.option_id == options[option - 1].id)\
-                    .filter(Vote.participant_id == author).first()
+                    .filter(Vote.participant_mention == author_mention).first()
 
                 # Vote for an option if multiple options are allowed and he is yet to vote this option
                 if poll.multiple_options and vote is None:
                     # Add the new vote
-                    vote = vote_on_poll(options, option, author)
+                    vote = Vote(options[option - 1].id, author_id, author_mention)
                     session.add(vote)
 
                     poll_edited = True
@@ -648,10 +662,10 @@ async def vote_poll(command, db_channel):
                 elif not poll.multiple_options:
                     # The participant didn't vote this option
                     if vote is None:
-                        remove_prev_vote(options, author)
+                        remove_prev_vote(options, author_mention)
 
                         # Add the new vote
-                        vote = vote_on_poll(options, option, author)
+                        vote = Vote(options[option - 1].id, author_id, author_mention)
                         session.add(vote)
 
                         poll_edited = True
@@ -660,7 +674,7 @@ async def vote_poll(command, db_channel):
     except ValueError:
         if poll.new_options:
             if not poll.multiple_options:
-                remove_prev_vote(options, author)
+                remove_prev_vote(options, author_mention)
 
             if option[0] == '"' and option[-1] == '"':
                 # Remove quotation marks
@@ -673,7 +687,7 @@ async def vote_poll(command, db_channel):
 
                 session.flush()
 
-                vote = vote_on_poll(options, options.__len__(), author)
+                vote = Vote(option.id, author_id, author_mention)
                 session.add(vote)
 
                 poll_edited = True
@@ -710,15 +724,16 @@ async def remove_vote(command, db_channel):
 
     # Check for external voters
     if params.__contains__('-e') and len(params) == 5:
-        author = params[4].replace('"', '')
+        author_mention = params[4]
     else:
-        author = command.author.mention
         # If the command has an invalid number of parameters
         if len(params) != 3:
             msg = 'Invalid parameters in command: **%s**' % command.content
 
             await send_temp_message(msg, command.channel)
             return
+
+        author_mention = command.author.mention
 
     poll_id = params[1]
     option = params[2]
@@ -744,7 +759,7 @@ async def remove_vote(command, db_channel):
         if 0 < option <= len(poll.options):
             vote = session.query(Vote)\
                 .filter(Vote.option_id == options[option - 1].id)\
-                .filter(Vote.participant_id == author).first()
+                .filter(Vote.participant_mention == author_mention).first()
 
             if vote is not None:
                 # Remove the vote from this option
@@ -915,11 +930,11 @@ def create_message(poll, options, selected_options=None):
             # Show the names of the voters for the option
             else:
                 for v in votes:
-                    msg += ' %s' % v.participant_id
+                    msg += ' %s' % v.participant_mention
 
     if selected_options is None:
         if poll.new_options:
-            msg += '\n(Mew options allowed!)'
+            msg += '\n(New options allowed!)'
 
         if poll.multiple_options:
             msg += '\n(Multiple options allowed!)'
@@ -941,7 +956,8 @@ def remove_prev_vote(options, participant):
         ids.append(o.id)
 
     # Get the previous vote
-    prev_vote = session.query(Vote).filter(Vote.option_id.in_(ids)).filter(Vote.participant_id == participant).first()
+    prev_vote = session.query(Vote).filter(Vote.option_id.in_(ids))\
+        .filter(Vote.participant_mention == participant).first()
 
     # If it had voted for something else remove it
     if prev_vote is not None:
@@ -1034,8 +1050,37 @@ async def send_temp_message(message, channel, time=30):
         pass
 
 
-def vote_on_poll(options, option, author):
-    return Vote(options[option - 1].id, author)
+async def send_closed_poll_message(options, server, db_poll, channel):
+    """
+    Send a private message to every member that voted in the poll.
+
+    :param options: options available in the poll.
+    :param server: the server where the poll was created.
+    :param db_poll: the Poll entry from the DB.
+    :param channel: the channel where the poll was created.
+    """
+
+    ids = []
+
+    for o in options:
+        ids.append(o.id)
+
+    # Get all the votes with different participants from this poll
+    votes = session.query(Vote).filter(Vote.option_id.in_(ids))\
+        .distinct(Vote.participant_id).all()
+
+    # Send a private message to each member that voted
+    for v in votes:
+        # If it's not an external user
+        if v.participant_id is not None:
+            m = server.get_member(v.participant_id)
+
+            # If it found the user
+            if m is not None:
+                # Don't send message to the author
+                if v.participant_id != db_poll.author:
+                    await client.send_message(m, 'Poll %s was closed, check the results in %s!'
+                                              % (db_poll.poll_id, channel.mention))
 
 # endregion
 
