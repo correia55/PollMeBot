@@ -334,8 +334,11 @@ async def create_poll(command, db_channel):
     # Send a private message to each member in the server
     for m in command.server.members:
         if m != client.user and m.id != new_poll.author:
-            await client.send_message(m, 'A new poll (%s) has been created in %s!'
-                                      % (new_poll.poll_id, command.channel.mention))
+            try:
+                await client.send_message(m, 'A new poll (%s) has been created in %s!'
+                                          % (new_poll.poll_id, command.channel.mention))
+            except discord.errors.Forbidden:
+                pass
 
     # Necessary for the options to get the poll id
     session.flush()
@@ -1079,8 +1082,11 @@ async def send_closed_poll_message(options, server, db_poll, channel):
             if m is not None:
                 # Don't send message to the author
                 if v.participant_id != db_poll.author:
-                    await client.send_message(m, 'Poll %s was closed, check the results in %s!'
-                                              % (db_poll.poll_id, channel.mention))
+                    try:
+                        await client.send_message(m, 'Poll %s was closed, check the results in %s!'
+                                                  % (db_poll.poll_id, channel.mention))
+                    except discord.errors.Forbidden:
+                        pass
 
 # endregion
 
