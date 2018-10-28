@@ -609,6 +609,9 @@ async def vote_poll(command, db_channel):
     if params.__contains__('-e') and len(params) == 5:
         author_id = None
         author_mention = params[4]
+
+        if author_mention[0] != '"':
+            author_mention = '"%s"' % author_mention
     else:
         # If the command has an invalid number of parameters
         if len(params) != 3:
@@ -728,6 +731,9 @@ async def remove_vote(command, db_channel):
     # Check for external voters
     if params.__contains__('-e') and len(params) == 5:
         author_mention = params[4]
+
+        if author_mention[0] != '"':
+            author_mention = '"%s"' % author_mention
     else:
         # If the command has an invalid number of parameters
         if len(params) != 3:
