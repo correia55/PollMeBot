@@ -931,13 +931,15 @@ def create_message(poll, options, selected_options=None):
         votes = session.query(Vote).filter(Vote.option_id == options[i].id).all()
 
         if len(votes) > 0:
-            msg += ':'
+            msg += ': %d votes' % len(votes)
 
             # Show the number of voters for the option
             if poll.only_numbers:
-                msg += ' %d vote.' % len(votes)
+                msg += '.'
             # Show the names of the voters for the option
             else:
+                msg += ' ->'
+                
                 for v in votes:
                     msg += ' %s' % v.participant_mention
 
