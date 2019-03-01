@@ -40,19 +40,21 @@ class Poll(base):
     multiple_options = Column(Boolean)
     only_numbers = Column(Boolean)
     new_options = Column(Boolean)
+    allow_external = Column(Boolean)
     message_id = Column(String)
     channel_id = Column(Integer, ForeignKey('Channel.id'))
     server_id = Column(String)
 
     options = relationship('Option', cascade='all,delete')
 
-    def __init__(self, poll_id, author, question, multiple_options, only_numbers, new_options, channel_id, server_id):
+    def __init__(self, poll_id, author, question, multiple_options, only_numbers, new_options, allow_external, channel_id, server_id):
         self.poll_id = poll_id
         self.author = author
         self.question = question
         self.multiple_options = multiple_options
         self.only_numbers = only_numbers
         self.new_options = new_options
+        self.allow_external = allow_external
         self.channel_id = channel_id
         self.server_id = server_id
 
@@ -259,6 +261,7 @@ async def create_poll(command, db_channel):
     multiple_options = False
     only_numbers = False
     new_options = False
+    allow_external = False
 
     # Confirmation is necessary when there is a need to close a poll before this one is created
     confirmation = False
@@ -276,6 +279,8 @@ async def create_poll(command, db_channel):
                 only_numbers = True
             if params[i].__contains__('n'):
                 new_options = True
+            if params[i].__contains__('e'):
+                allow_external = True
             if params[i].__contains__('y'):
                 confirmation = True
         else:
@@ -327,7 +332,7 @@ async def create_poll(command, db_channel):
 
     # Create the new poll
     new_poll = Poll(poll_params[0], command.author.id, poll_params[1], multiple_options, only_numbers, new_options,
-                    db_channel.id, server_id)
+                    allow_external, db_channel.id, server_id)
 
     session.add(new_poll)
 
@@ -624,7 +629,7 @@ async def vote_poll(command, db_channel):
         author_mention = command.author.mention
 
     poll_id = params[1]
-    option = params[2]
+    options = params[2]
 
     # Select the current poll
     poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
@@ -637,7 +642,14 @@ async def vote_poll(command, db_channel):
         return
 
     # Get all options available in the poll
-    options = session.query(Option).filter(Option.poll_id == poll.id).all()
+    db_options = session.query(Option).filter(Option.poll_id == poll.id).all()
+
+    # If it is an vote for an external user and it is not allowed
+    if author_id is None and not poll.allow_external:
+        msg = 'Poll *%s* does not allow for external votes.\nIf you need this option, ask the poll owner to edit it.' % poll_id
+
+        await send_temp_message(msg, command.channel)
+        return
 
     poll_edited = False
 
@@ -646,20 +658,20 @@ async def vote_poll(command, db_channel):
         # Verify if the options are numbers
         selected_options = []
 
-        for o in option.split(','):
+        for o in options.split(','):
             selected_options.append(int(o))
 
-        for option in selected_options:
+        for options in selected_options:
             # If it is a valid option
-            if 0 < option <= len(poll.options):
+            if 0 < options <= len(poll.options):
                 vote = session.query(Vote)\
-                    .filter(Vote.option_id == options[option - 1].id)\
+                    .filter(Vote.option_id == db_options[options - 1].id)\
                     .filter(Vote.participant_mention == author_mention).first()
 
                 # Vote for an option if multiple options are allowed and he is yet to vote this option
                 if poll.multiple_options and vote is None:
                     # Add the new vote
-                    vote = Vote(options[option - 1].id, author_id, author_mention)
+                    vote = Vote(db_options[options - 1].id, author_id, author_mention)
                     session.add(vote)
 
                     poll_edited = True
@@ -668,10 +680,10 @@ async def vote_poll(command, db_channel):
                 elif not poll.multiple_options:
                     # The participant didn't vote this option
                     if vote is None:
-                        remove_prev_vote(options, author_mention)
+                        remove_prev_vote(db_options, author_mention)
 
                         # Add the new vote
-                        vote = Vote(options[option - 1].id, author_id, author_mention)
+                        vote = Vote(db_options[options - 1].id, author_id, author_mention)
                         session.add(vote)
 
                         poll_edited = True
@@ -680,30 +692,35 @@ async def vote_poll(command, db_channel):
     except ValueError:
         if poll.new_options:
             if not poll.multiple_options:
-                remove_prev_vote(options, author_mention)
+                remove_prev_vote(db_options, author_mention)
 
-            if option[0] == '"' and option[-1] == '"':
+            if options[0] == '"' and options[-1] == '"':
                 # Remove quotation marks
-                option = option.replace('"', '')
+                options = options.replace('"', '')
 
                 # Add the new option to the poll
-                option = Option(poll.id, option)
-                options.append(option)
-                session.add(option)
+                options = Option(poll.id, options)
+                db_options.append(options)
+                session.add(options)
 
                 session.flush()
 
-                vote = Vote(option.id, author_id, author_mention)
+                vote = Vote(options.id, author_id, author_mention)
                 session.add(vote)
 
                 poll_edited = True
+        else:
+            msg = 'Poll *%s* does not allow for new votes.\nIf you need this option, ask the poll owner to edit it.' % poll_id
+
+            await send_temp_message(msg, command.channel)
+            return
 
     # Edit the message
     if poll_edited:
         c = client.get_channel(db_channel.discord_id)
         try:
             m = await client.get_message(c, poll.message_id)
-            await client.edit_message(m, create_message(poll, options))
+            await client.edit_message(m, create_message(poll, db_options))
         except discord.errors.NotFound:
             session.delete(poll)
 
@@ -949,6 +966,9 @@ def create_message(poll, options, selected_options=None):
 
         if poll.multiple_options:
             msg += '\n(Multiple options allowed!)'
+
+        if poll.allow_external:
+            msg += '\n(External voters allowed!)'
 
     return msg
 

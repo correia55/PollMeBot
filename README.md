@@ -9,7 +9,7 @@ Commands start with an exclamation mark (!) followed by the command and then eac
 ### Configure Channel
 
 ```
-!poll_me_channel <setting>
+!poll_channel <setting>
 ```
 
 Available *settings* for the channel configuration include:
@@ -20,7 +20,7 @@ Available *settings* for the channel configuration include:
 A channel can only be configure by an administrator.
 
 #### Example
-!poll_me_channel -da
+!poll_channel -da
 
 ### Create Poll
 
@@ -38,9 +38,12 @@ Available *settings* for the poll include:
 * -m - each user may vote in multiple options;
 * -o - each option displays only the number of votes;
 * -n - users can vote in new options;
+* -e - users can vote for external users;
 * -y - confirm the creation of the poll. This is necessary when there's a poll with the same id or the poll limit has been reached for that server.
 
-**Note:** the number of active polls per server is limited to 5. Creating a new poll when 5 other polls are already created will result in the deactivation of the oldest poll. To prevent this, close inactive polls manually (check **Close Poll** or **Remove Poll**).
+Settings can be combined together, using dash (-) followed by all the desired settings.
+
+**Note:** the number of active polls per server is limited to 10. Creating a new poll when the limit has been reached will result in the deactivation of the oldest poll. To prevent this, close inactive polls manually (check **Close Poll** or **Remove Poll**).
 
 #### Example
 !poll -n party2night "Let's party tonight?" Yes No "Only after midnight"
@@ -67,7 +70,7 @@ All parameters work in the same way as in **Create Poll**, with the responses be
 ```
 !poll_close poll_id selected_options
 ```
-The selected_options are a list options separated by comma (,), which will be displayed in the closed poll.
+The selected_options are a list options separated by comma (,) and no spaces, which will be displayed in the closed poll.
 
 A poll can only be closed by its owner.
 
@@ -86,24 +89,29 @@ A poll can only be removed by its owner. The difference between **Close Poll** a
 ### Refresh Poll
 
 ```
-!refresh poll_id
+!poll_refresh poll_id
 ```
 
 Refreshing a poll means a new message will be created with the poll, saving you the trouble of trying to find the previous location of the poll.
 
 #### Example
-!refresh party2night
+!poll_refresh party2night
 
 ### Vote Poll
 
 ```
 !vote poll_id selected_options
 ```
-The selected_options are a list options separated by comma (,).
+The selected_options are a list of options separated by comma (,).
 
-If the poll allows for new options to be created, the command followed by the new option within quotation marks can be used instead:
+If the poll allows for new options to be created, the command followed by the new option within quotation marks (") can be used instead:
 ```
 !vote poll_id "New option"
+```
+
+If the poll allows for external votes, to vote for an external user simply add -e followed by the voter's name within quotation marks ("), as in:
+```
+!vote poll_id selected_options -e "External voter's name"
 ```
 
 #### Examples
@@ -113,7 +121,11 @@ If the poll allows for new options to be created, the command followed by the ne
 
 !vote party2night "Only if booze"
 
-![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/vote_new_poll.gif)
+![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/vote_poll_new.gif)
+
+!vote party2night 1 -e "My friend not on the server"
+
+![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/vote_poll_external.gif)
 
 ### Unvote Poll
 
@@ -123,8 +135,12 @@ If the poll allows for new options to be created, the command followed by the ne
 
 Remove a vote from an option in the poll.
 
-#### Example
+Similarly to **Vote Poll**, to unvote a vote from an external user add -e followed by the voter's name within quotation marks (").
+
+#### Examples
 !unvote party2night 3
+
+!unvote party2night 1 -e "My friend not on the server"
 
 ### Help Poll
 
