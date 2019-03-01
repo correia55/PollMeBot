@@ -140,10 +140,10 @@ If the poll allows for external votes, to vote for an external user simply add -
 ### Unvote Poll
 
 ```
-!unvote poll_id selected_option
+!unvote poll_id selected_options
 ```
 
-Remove a vote from an option in the poll.
+Remove vote from a list of options in the poll.
 
 Similarly to **Vote Poll**, to unvote a vote from an external user add -e followed by the voter's name within quotation marks (").
 

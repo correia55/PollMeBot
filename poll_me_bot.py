@@ -688,7 +688,7 @@ async def vote_poll(command, db_channel):
 
     poll_edited = False
 
-    # Option is a number
+    # Option is a list of numbers
     try:
         # Verify if the options are numbers
         selected_options = []
@@ -696,17 +696,17 @@ async def vote_poll(command, db_channel):
         for o in options.split(','):
             selected_options.append(int(o))
 
-        for options in selected_options:
+        for option in selected_options:
             # If it is a valid option
-            if 0 < options <= len(poll.options):
+            if 0 < option <= len(poll.options):
                 vote = session.query(Vote)\
-                    .filter(Vote.option_id == db_options[options - 1].id)\
+                    .filter(Vote.option_id == db_options[option - 1].id)\
                     .filter(Vote.participant_mention == author_mention).first()
 
                 # Vote for an option if multiple options are allowed and he is yet to vote this option
                 if poll.multiple_options and vote is None:
                     # Add the new vote
-                    vote = Vote(db_options[options - 1].id, author_id, author_mention)
+                    vote = Vote(db_options[option - 1].id, author_id, author_mention)
                     session.add(vote)
 
                     poll_edited = True
@@ -718,12 +718,12 @@ async def vote_poll(command, db_channel):
                         remove_prev_vote(db_options, author_mention)
 
                         # Add the new vote
-                        vote = Vote(db_options[options - 1].id, author_id, author_mention)
+                        vote = Vote(db_options[option - 1].id, author_id, author_mention)
                         session.add(vote)
 
                         poll_edited = True
 
-    # Option is not a number
+    # Option is not a list of numbers
     except ValueError:
         if poll.new_options:
             if not poll.multiple_options:
@@ -753,6 +753,7 @@ async def vote_poll(command, db_channel):
     # Edit the message
     if poll_edited:
         c = client.get_channel(db_channel.discord_id)
+
         try:
             m = await client.get_message(c, poll.message_id)
             await client.edit_message(m, create_message(command.server, poll, db_options))
@@ -797,7 +798,7 @@ async def remove_vote(command, db_channel):
         author_mention = command.author.mention
 
     poll_id = params[1]
-    option = params[2]
+    options = params[2]
 
     # Select the current poll
     poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
@@ -810,33 +811,38 @@ async def remove_vote(command, db_channel):
         return
 
     # Get all options available in the poll
-    options = session.query(Option).filter(Option.poll_id == poll.id).all()
+    db_options = session.query(Option).filter(Option.poll_id == poll.id).all()
 
     # Option is a number
     try:
-        option = int(option)
+        # Verify if the options are numbers
+        selected_options = []
 
-        # If it is a valid option
-        if 0 < option <= len(poll.options):
-            vote = session.query(Vote)\
-                .filter(Vote.option_id == options[option - 1].id)\
-                .filter(Vote.participant_mention == author_mention).first()
+        for o in options.split(','):
+            selected_options.append(int(o))
 
-            if vote is not None:
-                # Remove the vote from this option
-                session.delete(vote)
+        for option in selected_options:
+            # If it is a valid option
+            if 0 < option <= len(db_options):
+                vote = session.query(Vote)\
+                    .filter(Vote.option_id == db_options[option - 1].id)\
+                    .filter(Vote.participant_mention == author_mention).first()
 
-                # Edit the message
-                c = client.get_channel(db_channel.discord_id)
+                if vote is not None:
+                    # Remove the vote from this option
+                    session.delete(vote)
 
-                try:
-                    m = await client.get_message(c, poll.message_id)
+        # Edit the message
+        c = client.get_channel(db_channel.discord_id)
 
-                    await client.edit_message(m, create_message(command.server, poll, options))
-                except discord.errors.NotFound:
-                    session.delete(poll)
+        try:
+            m = await client.get_message(c, poll.message_id)
 
-                session.commit()
+            await client.edit_message(m, create_message(command.server, poll, db_options))
+        except discord.errors.NotFound:
+            session.delete(poll)
+
+        session.commit()
 
     # Option is not a number
     except ValueError:
@@ -1032,11 +1038,10 @@ def remove_prev_vote(options, participant):
         session.delete(prev_vote)
 
 
-async def close_poll(server, poll, db_channel, options, selected_options):
+async def close_poll(poll, db_channel, options, selected_options):
     """
     Delete a poll from the DB and update the message to closed poll.
 
-    :param server: the server where the poll was created.
     :param poll: the poll to close.
     :param db_channel: the corresponding channel entry in the DB.
     :param options: the list of options available in the poll.
@@ -1049,7 +1054,7 @@ async def close_poll(server, poll, db_channel, options, selected_options):
     try:
         m = await client.get_message(c, poll.message_id)
 
-        await client.edit_message(m, create_message(server, poll, options, selected_options=selected_options))
+        await client.edit_message(m, create_message(None, poll, options, selected_options=selected_options))
     except discord.errors.NotFound:
         pass
 
