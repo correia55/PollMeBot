@@ -1,11 +1,16 @@
 import os
 import discord
 import asyncio
+import datetime
 
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy import Column, String, Integer, Boolean, ForeignKey
+
+# Names of weekdays in English and Portuguese
+WEEKDAYS_EN = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+WEEKDAYS_PT = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
 
 
 # region DB Classes
@@ -258,6 +263,9 @@ async def create_poll(command, db_channel):
     # Get the list of parameters in the message
     params = parse_command_parameters(command.content)
 
+    weekly = False
+    pt = False
+
     multiple_options = False
     only_numbers = False
     new_options = False
@@ -272,7 +280,13 @@ async def create_poll(command, db_channel):
     for i in range(len(params)):
         if i == 0:
             continue
-        if params[i].startswith('-'):
+
+        if params[i] == '-weekly':
+            weekly = True
+        elif params[i] == '-weekly_pt':
+            weekly = True
+            pt = True
+        elif params[i].startswith('-'):
             if params[i].__contains__('m'):
                 multiple_options = True
             if params[i].__contains__('o'):
@@ -351,9 +365,25 @@ async def create_poll(command, db_channel):
     options = []
 
     # Create the options
-    if len(poll_params[2:]) != 0:
+    if len(poll_params[2:]) != 0 or weekly:
+        # Add days of the week as options
+        if weekly:
+            date = datetime.datetime.today()
+            num_options = 7 - date.weekday()
+
+            for i in range(num_options):
+                # Name depending on the option used
+                if pt:
+                    day_name = WEEKDAYS_PT[date.weekday()]
+                else:
+                    day_name = WEEKDAYS_EN[date.weekday()]
+
+                options.append(Option(new_poll.id, '%s (%s)' % (day_name, date.day)))
+                date = date + datetime.timedelta(days=1)
+
         for option in poll_params[2:]:
             options.append(Option(new_poll.id, option))
+
     # If no options were provided, then create the default Yes and No
     else:
         options.append(Option(new_poll.id, 'Yes'))

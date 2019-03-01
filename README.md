@@ -35,13 +35,15 @@ The poll_id is used for referring to this specific poll. It can be any string wi
 The first parameter that does not start with a dash is considered to be the poll_id, the next one the question and all of the following, the response options. If any of these parameters contains spaces, then they should be surrounded by quotation marks.
 
 Available *settings* for the poll include:
-* -m - each user may vote in multiple options;
-* -o - each option displays only the number of votes;
-* -n - users can vote in new options;
-* -e - users can vote for external users;
-* -y - confirm the creation of the poll. This is necessary when there's a poll with the same id or the poll limit has been reached for that server.
+* *-m* - each user may vote in multiple options;
+* *-o* - each option displays only the number of votes;
+* *-n* - users can vote in new options;
+* *-e* - users can vote for external users;
+* *-y* - confirm the creation of the poll. This is necessary when there's a poll with the same id or the poll limit has been reached for that server.
 
 Settings can be combined together, using dash (-) followed by all the desired settings.
+
+If the poll options are supposed to be the weekdays, a shortcut can be used by adding *-weekly* (or *-weekly_pt* for the portuguese version).
 
 **Note:** the number of active polls per server is limited to 10. Creating a new poll when the limit has been reached will result in the deactivation of the oldest poll. To prevent this, close inactive polls manually (check **Close Poll** or **Remove Poll**).
 
