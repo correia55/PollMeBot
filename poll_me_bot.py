@@ -362,7 +362,7 @@ async def create_poll(command, db_channel):
     session.add_all(options)
 
     # Create the message with the poll
-    msg = await client.send_message(command.channel, create_message(new_poll, options))
+    msg = await client.send_message(command.channel, create_message(command.server, new_poll, options))
 
     new_poll.message_id = msg.id
 
@@ -472,7 +472,7 @@ async def edit_poll(command, db_channel):
     try:
         m = await client.get_message(c, poll.message_id)
 
-        await client.edit_message(m, create_message(poll, options))
+        await client.edit_message(m, create_message(command.server, poll, options))
     except discord.errors.NotFound:
         session.delete(poll)
 
@@ -646,7 +646,7 @@ async def vote_poll(command, db_channel):
 
     # If it is an vote for an external user and it is not allowed
     if author_id is None and not poll.allow_external:
-        msg = 'Poll *%s* does not allow for external votes.\nIf you need this option, ask the poll owner to edit it.' % poll_id
+        msg = 'Poll *%s* does not allow for external votes.\nIf you need this option, ask the poll author to edit it.' % poll_id
 
         await send_temp_message(msg, command.channel)
         return
@@ -710,7 +710,7 @@ async def vote_poll(command, db_channel):
 
                 poll_edited = True
         else:
-            msg = 'Poll *%s* does not allow for new votes.\nIf you need this option, ask the poll owner to edit it.' % poll_id
+            msg = 'Poll *%s* does not allow for new votes.\nIf you need this option, ask the poll author to edit it.' % poll_id
 
             await send_temp_message(msg, command.channel)
             return
@@ -720,7 +720,7 @@ async def vote_poll(command, db_channel):
         c = client.get_channel(db_channel.discord_id)
         try:
             m = await client.get_message(c, poll.message_id)
-            await client.edit_message(m, create_message(poll, db_options))
+            await client.edit_message(m, create_message(command.server, poll, db_options))
         except discord.errors.NotFound:
             session.delete(poll)
 
@@ -797,7 +797,7 @@ async def remove_vote(command, db_channel):
                 try:
                     m = await client.get_message(c, poll.message_id)
 
-                    await client.edit_message(m, create_message(poll, options))
+                    await client.edit_message(m, create_message(command.server, poll, options))
                 except discord.errors.NotFound:
                     session.delete(poll)
 
@@ -853,7 +853,7 @@ async def refresh_poll(command, db_channel):
 
         options = session.query(Option).filter(Option.poll_id == poll.id).all()
 
-        msg = await client.send_message(command.channel, create_message(poll, options))
+        msg = await client.send_message(command.channel, create_message(command.server, poll, options))
         poll.message_id = msg.id
 
         session.commit()
@@ -921,10 +921,11 @@ def parse_command_parameters(command):
     return params
 
 
-def create_message(poll, options, selected_options=None):
+def create_message(server, poll, options, selected_options=None):
     """
     Creates a message given a poll.
 
+    :param server: the server where the poll was created.
     :param poll: the poll.
     :param options: the options available in the poll.
     :param selected_options: the list of options that are to be displayed in the closed poll.
@@ -934,7 +935,8 @@ def create_message(poll, options, selected_options=None):
     if selected_options is not None:
         msg = '**%s** (Closed)' % poll.question
     else:
-        msg = '**%s** (poll_id: %s)' % (poll.question, poll.poll_id)
+        m = server.get_member(poll.author)
+        msg = '**%s** (poll_id: %s) (author: %s)' % (poll.question, poll.poll_id, m.mention)
 
     for i in range(len(options)):
         # Ignore the options not selected
@@ -995,10 +997,11 @@ def remove_prev_vote(options, participant):
         session.delete(prev_vote)
 
 
-async def close_poll(poll, db_channel, options, selected_options):
+async def close_poll(server, poll, db_channel, options, selected_options):
     """
     Delete a poll from the DB and update the message to closed poll.
 
+    :param server: the server where the poll was created.
     :param poll: the poll to close.
     :param db_channel: the corresponding channel entry in the DB.
     :param options: the list of options available in the poll.
@@ -1011,7 +1014,7 @@ async def close_poll(poll, db_channel, options, selected_options):
     try:
         m = await client.get_message(c, poll.message_id)
 
-        await client.edit_message(m, create_message(poll, options, selected_options=selected_options))
+        await client.edit_message(m, create_message(server, poll, options, selected_options=selected_options))
     except discord.errors.NotFound:
         pass
 
