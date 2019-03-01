@@ -20,7 +20,7 @@ Available *settings* for the channel configuration include:
 A channel can only be configure by an administrator.
 
 #### Example
-!poll_channel -da
+*!poll_channel -da*
 
 ### Create Poll
 
@@ -46,24 +46,33 @@ Settings can be combined together, using dash (-) followed by all the desired se
 **Note:** the number of active polls per server is limited to 10. Creating a new poll when the limit has been reached will result in the deactivation of the oldest poll. To prevent this, close inactive polls manually (check **Close Poll** or **Remove Poll**).
 
 #### Example
-!poll -n party2night "Let's party tonight?" Yes No "Only after midnight"
+*!poll -n party2night "Let's party tonight?" Yes No "Only after midnight"*
 
 ![Create Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/create_poll.gif)
 
 ### Edit Poll
 
+Depending on whether you want to edit the question, settings or options, you should use one of the following variants of the command:
+
 ```
-!poll_edit <settings> poll_id question <responses>
+!poll_edit poll_id
 ```
+
+* to edit the question or settings - use the base command and add the new settings as in **Create Poll**, using dash (-), or add the new question. You cannot change both with the same command;
+* to add options - use the base command and add *-add* followed by the list of options, formatted similarly to **Create Poll**;
+* to remove options - use the base command and add *-rm* followed by the list of options, using their number ids separated by comma (,) and no spaces.
 
 A poll can only be edited by its owner.
 
-All parameters work in the same way as in **Create Poll**, with the responses being optional.
+#### Examples
+*!poll_edit party2night "Let's party tomorrow?"*
 
-#### Example
-!poll_edit -n party2night "Let's party tonight at the pub?" Yes No "Only after midnight"
+*!poll_edit party2night -mn*
 
-![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/edit_poll.gif)
+*!poll_edit party2night -add Maybe "Only if booze"*
+
+*!poll_edit party2night -rm 3,4*
+
 
 ### Close Poll
 
@@ -83,7 +92,7 @@ A poll can only be closed by its owner.
 A poll can only be removed by its owner. The difference between **Close Poll** and **Remove Poll** is that remove will also delete the message associated with the poll, while close only prevents interactions with it.
 
 #### Example
-!poll_remove party2night
+*!poll_remove party2night*
 
 
 ### Refresh Poll
@@ -95,7 +104,8 @@ A poll can only be removed by its owner. The difference between **Close Poll** a
 Refreshing a poll means a new message will be created with the poll, saving you the trouble of trying to find the previous location of the poll.
 
 #### Example
-!poll_refresh party2night
+*!poll_refresh party2night*
+
 
 ### Vote Poll
 
@@ -115,17 +125,17 @@ If the poll allows for external votes, to vote for an external user simply add -
 ```
 
 #### Examples
-!vote party2night 3
+*!vote party2night 3*
 
-![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/vote_poll.gif)
+![Vote Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/vote_poll.gif)
 
-!vote party2night "Only if booze"
+*!vote party2night "Only if booze"*
 
-![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/vote_poll_new.gif)
+![Vote New Option Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/vote_poll_new.gif)
 
-!vote party2night 1 -e "My friend not on the server"
+*!vote party2night 1 -e "My friend not on the server"*
 
-![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/vote_poll_external.gif)
+![Vote External User Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/vote_poll_external.gif)
 
 ### Unvote Poll
 
@@ -138,9 +148,9 @@ Remove a vote from an option in the poll.
 Similarly to **Vote Poll**, to unvote a vote from an external user add -e followed by the voter's name within quotation marks (").
 
 #### Examples
-!unvote party2night 3
+*!unvote party2night 3*
 
-!unvote party2night 1 -e "My friend not on the server"
+*!unvote party2night 1 -e "My friend not on the server"*
 
 ### Help Poll
 
@@ -151,10 +161,9 @@ Similarly to **Vote Poll**, to unvote a vote from an external user add -e follow
 Help creates a temporary message that shows examples of basic commands.
 
 #### Example
+*!help_me_poll*
 
-!help_me_poll
-
-![Edit Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/help_me_poll.gif)
+![Poll Me Help Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/help_me_poll.gif)
 
 ## Contributing
 

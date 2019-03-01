@@ -387,9 +387,13 @@ async def edit_poll(command, db_channel):
     # Get the list of parameters in the message
     params = parse_command_parameters(command.content)
 
+    add = False
+    remove = False
+
     multiple_options = False
     only_numbers = False
     new_options = False
+    allow_external = False
 
     poll_params = []
 
@@ -397,19 +401,28 @@ async def edit_poll(command, db_channel):
     for i in range(len(params)):
         if i == 0:
             continue
-        if params[i].startswith('-'):
+
+        if params[i] == '-add':
+            add = True
+            remove = False
+        elif params[i] == '-rm':
+            remove = True
+            add = False
+        elif params[i].startswith('-'):
             if params[i].__contains__('m'):
                 multiple_options = True
             if params[i].__contains__('o'):
                 only_numbers = True
             if params[i].__contains__('n'):
                 new_options = True
+            if params[i].__contains__('e'):
+                allow_external = True
         else:
             # Add all non configuration parameters, ignoring quotation marks
             poll_params.append(params[i].replace('"', ''))
 
     # If the command has an invalid number of parameters
-    if len(poll_params) < 2:
+    if (len(poll_params) < 2 and (add or remove)) or (len(poll_params) < 1 and not add and not remove):
         msg = 'Invalid parameters in command: **%s**' % command.content
 
         await send_temp_message(msg, command.channel)
@@ -434,37 +447,59 @@ async def edit_poll(command, db_channel):
         await send_temp_message(msg, command.channel)
         return
 
-    poll.question = poll_params[1]
-    poll.multiple_options = multiple_options
-    poll.only_numbers = only_numbers
-    poll.new_options = new_options
-
-    msg_options = poll_params[2:]
-
     # Get all options available in the poll
-    options = session.query(Option).filter(Option.poll_id == poll.id).all()
+    db_options = session.query(Option).filter(Option.poll_id == poll.id).all()
 
-    # Update the options
-    if len(msg_options) != 0:
-        if len(msg_options) >= len(options):
-            # Edit existing options
-            for i in range(len(options)):
-                options[i].option = msg_options[i]
+    # Add the new options
+    if add:
+        new_options = poll_params[1:]
 
-            # Add the new options
-            for i in range(len(options), len(msg_options)):
-                o = Option(poll.id, msg_options[i])
+        options = []
 
-                options.append(o)
-                session.add(o)
+        # Create the options
+        for option in new_options:
+            options.append(Option(poll.id, option))
+
+        session.add_all(options)
+
+        db_options.extend(options)
+    # Remove options
+    elif remove:
+        rm_options = poll_params[1]
+
+        # Option is a number
+        try:
+            # Verify if the options are numbers
+            selected_options = []
+
+            for o in rm_options.split(','):
+                selected_options.append(int(o))
+
+            # Removes duplicates in the list
+            selected_options = list(set(selected_options))
+
+            # Sort list in decreasing order, preventing incorrect removal of options
+            selected_options.sort(reverse=True)
+
+            for option in selected_options:
+                # If it is a valid option
+                if 0 < option <= len(db_options):
+                    session.delete(db_options[option - 1])
+                    db_options.remove(db_options[option - 1])
+
+        # Option is not a number
+        except ValueError:
+            pass
+    else:
+        # Edit poll question
+        if len(poll_params) > 1:
+            poll.question = poll_params[1]
+        # Edit poll settings
         else:
-            # Edit existing options
-            for i in range(len(msg_options)):
-                options[i].option = msg_options[i]
-
-            # Remove unnecessary options
-            for i in range(len(msg_options), len(options)):
-                session.delete(options.pop(i))
+            poll.multiple_options = multiple_options
+            poll.only_numbers = only_numbers
+            poll.new_options = new_options
+            poll.allow_external = allow_external
 
     # Edit message
     c = client.get_channel(db_channel.discord_id)
@@ -472,7 +507,7 @@ async def edit_poll(command, db_channel):
     try:
         m = await client.get_message(c, poll.message_id)
 
-        await client.edit_message(m, create_message(command.server, poll, options))
+        await client.edit_message(m, create_message(command.server, poll, db_options))
     except discord.errors.NotFound:
         session.delete(poll)
 
