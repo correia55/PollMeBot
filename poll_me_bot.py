@@ -469,6 +469,8 @@ async def create_poll(command, db_channel):
 
     session.add_all(options)
 
+    session.commit()
+
     # Create the message with the poll
     msg = await client.send_message(command.channel, create_message(command.server, new_poll, options))
 
@@ -480,8 +482,6 @@ async def create_poll(command, db_channel):
     for i in range(min(len(options), 9)):
         await client.add_reaction(msg, emoji + u'\u20E3')
         emoji = chr(ord(emoji) + 1)
-
-    session.commit()
 
 
 async def edit_poll(command, db_channel):
@@ -1020,6 +1020,13 @@ async def refresh_poll(command, db_channel):
         poll.message_id = msg.id
 
         session.commit()
+
+        # Add a reaction for each option, with 9 being the max number of reactions
+        emoji = u'\u0031'
+
+        for i in range(min(len(options), 9)):
+            await client.add_reaction(msg, emoji + u'\u20E3')
+            emoji = chr(ord(emoji) + 1)
 
 
 async def help_message(command, db_channel):
