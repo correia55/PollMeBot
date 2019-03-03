@@ -202,6 +202,9 @@ async def on_reaction_add(reaction, user):
     # Get the number of the vote
     option = ord(reaction.emoji[0]) - 48
 
+    if option > 9:
+        return
+
     # Get all options available in the poll
     db_options = session.query(Option).filter(Option.poll_id == poll.id).all()
 
@@ -238,6 +241,9 @@ async def on_reaction_remove(reaction, user):
 
     # Get the number of the vote
     option = ord(reaction.emoji[0]) - 48
+
+    if option > 9:
+        return
 
     # Get all options available in the poll
     db_options = session.query(Option).filter(Option.poll_id == poll.id).all()
@@ -468,10 +474,10 @@ async def create_poll(command, db_channel):
 
     new_poll.message_id = msg.id
 
-    # Add a reaction for each option
+    # Add a reaction for each option, with 9 being the max number of reactions
     emoji = u'\u0031'
 
-    for i in range(len(options)):
+    for i in range(min(len(options), 9)):
         await client.add_reaction(msg, emoji + u'\u20E3')
         emoji = chr(ord(emoji) + 1)
 
@@ -571,6 +577,20 @@ async def edit_poll(command, db_channel):
 
         session.add_all(options)
 
+        # Get the message corresponding to the poll
+        c = client.get_channel(db_channel.discord_id)
+        poll_msg = await client.get_message(c, poll.message_id)
+
+        # Add a reaction for each new option
+        emoji = chr(ord(u'\u0031') + len(db_options))
+
+        # Max number of reactions that can be added
+        num_react = min(9, len(db_options) + len(options))
+
+        for i in range(max(0, num_react - len(db_options))):
+            await client.add_reaction(poll_msg, emoji + u'\u20E3')
+            emoji = chr(ord(emoji) + 1)
+
         db_options.extend(options)
     # Remove options
     elif remove:
@@ -590,9 +610,31 @@ async def edit_poll(command, db_channel):
             # Sort list in decreasing order, preventing incorrect removal of options
             selected_options.sort(reverse=True)
 
+            # Get the message corresponding to the poll
+            c = client.get_channel(db_channel.discord_id)
+            poll_msg = await client.get_message(c, poll.message_id)
+
             for option in selected_options:
                 # If it is a valid option
                 if 0 < option <= len(db_options):
+                    # Remove the reaction for the highest option
+                    if len(db_options) < 10:
+                        emoji = chr(ord(u'\u0031') + len(db_options) - 1)
+
+                        users = None
+
+                        # Get all users with that reaction
+                        for reaction in poll_msg.reactions:
+                            if reaction.emoji == (emoji + u'\u20E3'):
+                                users = await client.get_reaction_users(reaction)
+
+                        if users is not None:
+                            for user in users:
+                                await client.remove_reaction(poll_msg, emoji + u'\u20E3', user)
+
+                        await client.remove_reaction(poll_msg, emoji + u'\u20E3', client.user)
+
+                    # Remove the option
                     session.delete(db_options[option - 1])
                     db_options.remove(db_options[option - 1])
 
