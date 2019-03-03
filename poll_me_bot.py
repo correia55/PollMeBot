@@ -167,7 +167,7 @@ async def on_message(message):
     elif message.content.startswith('!vote '):
         await vote_poll(message, db_channel)
     elif message.content.startswith('!unvote '):
-        await remove_vote(message, db_channel)
+        await unvote_poll(message, db_channel)
     elif message.content.startswith('!help_me_poll'):
         await help_message(message, db_channel)
     else:
@@ -184,6 +184,78 @@ async def on_message(message):
                 await client.delete_message(message)
         except discord.errors.NotFound:
             pass
+
+
+# When a reaction is added in Discord
+@client.event
+async def on_reaction_add(reaction, user):
+    if user == client.user:
+        return
+
+    # Select the current poll
+    poll = session.query(Poll).filter(Poll.message_id == reaction.message.id).first()
+
+    # The reaction was to a message that is not a poll
+    if poll is None:
+        return
+
+    # Get the number of the vote
+    option = ord(reaction.emoji[0]) - 48
+
+    # Get all options available in the poll
+    db_options = session.query(Option).filter(Option.poll_id == poll.id).all()
+
+    # Get the channel information from the DB
+    db_channel = session.query(Channel).filter(Channel.discord_id == reaction.message.channel.id).first()
+
+    poll_edited = add_vote(option, user.id, user.mention, db_options, poll.multiple_options)
+
+    # Edit the message
+    if poll_edited:
+        c = client.get_channel(db_channel.discord_id)
+
+        try:
+            m = await client.get_message(c, poll.message_id)
+            await client.edit_message(m, create_message(reaction.message.server, poll, db_options))
+        except discord.errors.NotFound:
+            session.delete(poll)
+
+    session.commit()
+
+
+# When a reaction is removed in Discord
+@client.event
+async def on_reaction_remove(reaction, user):
+    if user == client.user:
+        return
+
+    # Select the current poll
+    poll = session.query(Poll).filter(Poll.message_id == reaction.message.id).first()
+
+    # The reaction was to a message that is not a poll
+    if poll is None:
+        return
+
+    # Get the number of the vote
+    option = ord(reaction.emoji[0]) - 48
+
+    # Get all options available in the poll
+    db_options = session.query(Option).filter(Option.poll_id == poll.id).all()
+
+    # Get the channel information from the DB
+    db_channel = session.query(Channel).filter(Channel.discord_id == reaction.message.channel.id).first()
+
+    poll_edited = remove_vote(option, user.mention, db_options)
+
+    # Edit the message
+    if poll_edited:
+        c = client.get_channel(db_channel.discord_id)
+
+        try:
+            m = await client.get_message(c, poll.message_id)
+            await client.edit_message(m, create_message(reaction.message.server, poll, db_options))
+        except discord.errors.NotFound:
+            session.delete(poll)
 
 # endregion
 
@@ -395,6 +467,13 @@ async def create_poll(command, db_channel):
     msg = await client.send_message(command.channel, create_message(command.server, new_poll, options))
 
     new_poll.message_id = msg.id
+
+    # Add a reaction for each option
+    emoji = u'\u0031'
+
+    for i in range(len(options)):
+        await client.add_reaction(msg, emoji + u'\u20E3')
+        emoji = chr(ord(emoji) + 1)
 
     session.commit()
 
@@ -727,31 +806,7 @@ async def vote_poll(command, db_channel):
             selected_options.append(int(o))
 
         for option in selected_options:
-            # If it is a valid option
-            if 0 < option <= len(poll.options):
-                vote = session.query(Vote)\
-                    .filter(Vote.option_id == db_options[option - 1].id)\
-                    .filter(Vote.participant_mention == author_mention).first()
-
-                # Vote for an option if multiple options are allowed and he is yet to vote this option
-                if poll.multiple_options and vote is None:
-                    # Add the new vote
-                    vote = Vote(db_options[option - 1].id, author_id, author_mention)
-                    session.add(vote)
-
-                    poll_edited = True
-
-                # If multiple options are not allowed
-                elif not poll.multiple_options:
-                    # The participant didn't vote this option
-                    if vote is None:
-                        remove_prev_vote(db_options, author_mention)
-
-                        # Add the new vote
-                        vote = Vote(db_options[option - 1].id, author_id, author_mention)
-                        session.add(vote)
-
-                        poll_edited = True
+            poll_edited |= add_vote(option, author_id, author_mention, db_options, poll.multiple_options)
 
     # Option is not a list of numbers
     except ValueError:
@@ -793,7 +848,7 @@ async def vote_poll(command, db_channel):
     session.commit()
 
 
-async def remove_vote(command, db_channel):
+async def unvote_poll(command, db_channel):
     """
     Remove a vote from an option in a poll.
 
@@ -843,6 +898,8 @@ async def remove_vote(command, db_channel):
     # Get all options available in the poll
     db_options = session.query(Option).filter(Option.poll_id == poll.id).all()
 
+    poll_edited = False
+
     # Option is a number
     try:
         # Verify if the options are numbers
@@ -852,27 +909,20 @@ async def remove_vote(command, db_channel):
             selected_options.append(int(o))
 
         for option in selected_options:
-            # If it is a valid option
-            if 0 < option <= len(db_options):
-                vote = session.query(Vote)\
-                    .filter(Vote.option_id == db_options[option - 1].id)\
-                    .filter(Vote.participant_mention == author_mention).first()
+            poll_edited |= remove_vote(option, author_mention, db_options)
 
-                if vote is not None:
-                    # Remove the vote from this option
-                    session.delete(vote)
+        if poll_edited:
+            # Edit the message
+            c = client.get_channel(db_channel.discord_id)
 
-        # Edit the message
-        c = client.get_channel(db_channel.discord_id)
+            try:
+                m = await client.get_message(c, poll.message_id)
 
-        try:
-            m = await client.get_message(c, poll.message_id)
+                await client.edit_message(m, create_message(command.server, poll, db_options))
+            except discord.errors.NotFound:
+                session.delete(poll)
 
-            await client.edit_message(m, create_message(command.server, poll, db_options))
-        except discord.errors.NotFound:
-            session.delete(poll)
-
-        session.commit()
+            session.commit()
 
     # Option is not a number
     except ValueError:
@@ -1188,6 +1238,74 @@ async def send_closed_poll_message(options, server, db_poll, channel):
                                                   % (db_poll.poll_id, channel.mention))
                     except discord.errors.Forbidden:
                         pass
+
+
+def add_vote(option, participant_id, participant_mention, db_options, multiple_options):
+    """
+    Add a vote.
+
+    :param option: the voted option.
+    :param participant_id: the id of the participant whose vote is to add.
+    :param participant_mention: the mention of the participant whose vote is to add.
+    :param db_options: the existing options in the db.
+    :param multiple_options: if multiple options are allowed in this poll.
+    """
+
+    new_vote = False
+
+    # If it is a valid option
+    if 0 < option <= len(db_options):
+        vote = session.query(Vote)\
+            .filter(Vote.option_id == db_options[option - 1].id)\
+            .filter(Vote.participant_mention == participant_mention).first()
+
+        # Vote for an option if multiple options are allowed and he is yet to vote this option
+        if multiple_options and vote is None:
+            # Add the new vote
+            vote = Vote(db_options[option - 1].id, participant_id, participant_mention)
+            session.add(vote)
+
+            new_vote = True
+
+        # If multiple options are not allowed
+        elif not multiple_options:
+            # The participant didn't vote this option
+            if vote is None:
+                remove_prev_vote(db_options, participant_mention)
+
+                # Add the new vote
+                vote = Vote(db_options[option - 1].id, participant_id, participant_mention)
+                session.add(vote)
+
+                new_vote = True
+
+    return new_vote
+
+
+def remove_vote(option, participant_mention, db_options):
+    """
+    Remove a vote.
+
+    :param option: the voted option.
+    :param participant_mention: the mention of the participant whose vote is to add.
+    :param db_options: the existing options in the db.
+    """
+
+    vote_removed = False
+
+    # If it is a valid option
+    if 0 < option <= len(db_options):
+        vote = session.query(Vote)\
+            .filter(Vote.option_id == db_options[option - 1].id)\
+            .filter(Vote.participant_mention == participant_mention).first()
+
+        if vote is not None:
+            # Remove the vote from this option
+            session.delete(vote)
+
+            vote_removed = True
+
+    return vote_removed
 
 # endregion
 
