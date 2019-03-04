@@ -615,11 +615,17 @@ async def edit_poll(command, db_channel):
             poll_msg = await client.get_message(c, poll.message_id)
 
             for option in selected_options:
+                num_options = len(db_options)
+
                 # If it is a valid option
-                if 0 < option <= len(db_options):
+                if 0 < option <= num_options:
+                    # Remove the option - needs to be before the removal of reactions or it causes problems
+                    session.delete(db_options[option - 1])
+                    db_options.remove(db_options[option - 1])
+
                     # Remove the reaction for the highest option
-                    if len(db_options) < 10:
-                        emoji = chr(ord(u'\u0031') + len(db_options) - 1)
+                    if num_options < 10:
+                        emoji = chr(ord(u'\u0031') + num_options - 1)
 
                         users = None
 
@@ -633,10 +639,6 @@ async def edit_poll(command, db_channel):
                                 await client.remove_reaction(poll_msg, emoji + u'\u20E3', user)
 
                         await client.remove_reaction(poll_msg, emoji + u'\u20E3', client.user)
-
-                    # Remove the option
-                    session.delete(db_options[option - 1])
-                    db_options.remove(db_options[option - 1])
 
         # Option is not a number
         except ValueError:
@@ -1049,9 +1051,9 @@ async def help_message(command, db_channel):
 
     msg = 'Poll Me Bot Help\n' \
           '----------------\n' \
-          'For creating a poll: *!poll poll_id "Question" "Option 1" "Option 2"*\n' \
-          'For voting for an option: *!vote poll_id list_of_numbers_separated_by_comma*\n' \
-          'For removing your vote for that option: *!unvote poll_id number*\n' \
+          'Creating a poll: *!poll poll_id "Question" "Option 1" "Option 2"*\n' \
+          'Voting: *!vote poll_id list_of_numbers_separated_by_comma*\n' \
+          'Removing votes: *!unvote poll_id list_of_numbers_separated_by_comma*\n' \
           '(More options and details are available at https://github.com/correia55/PollMeBot)\n' \
           '(This message will self-destruct in 30 seconds.)'
 

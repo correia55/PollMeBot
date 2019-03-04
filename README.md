@@ -126,6 +126,8 @@ If the poll allows for external votes, to vote for an external user simply add -
 !vote poll_id selected_options -e "External voter's name"
 ```
 
+Users can now also vote by reacting to the number of the option they desire.
+
 #### Examples
 *!vote party2night 3*
 
@@ -148,6 +150,8 @@ If the poll allows for external votes, to vote for an external user simply add -
 Remove vote from a list of options in the poll.
 
 Similarly to **Vote Poll**, to unvote a vote from an external user add -e followed by the voter's name within quotation marks (").
+
+Removing a reaction to the number of an option also removes that user's vote.
 
 #### Examples
 *!unvote party2night 3*
