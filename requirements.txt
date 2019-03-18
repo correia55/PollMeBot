@@ -1,5 +1,4 @@
-discord
-sqlalchemy
-git+https://github.com/Rapptz/discord.py
+discord==0.16.12
 psycopg2-binary==2.7.5
-alembic
+sqlalchemy==1.2.11
+alembic==1.0.8
