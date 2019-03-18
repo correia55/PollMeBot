@@ -290,6 +290,8 @@ async def create_poll(command, db_channel):
 
     weekly = False
     pt = False
+    day_param_pos = -1
+    day_param_poll_pos = -1
 
     multiple_options = False
     only_numbers = False
@@ -308,9 +310,14 @@ async def create_poll(command, db_channel):
 
         if params[i] == '-weekly':
             weekly = True
+            pt = False
+            day_param_pos = i + 1
+            day_param_poll_pos = len(poll_params)
         elif params[i] == '-weekly_pt':
             weekly = True
             pt = True
+            day_param_pos = i + 1
+            day_param_poll_pos = len(poll_params)
         elif params[i].startswith('-'):
             if params[i].__contains__('m'):
                 multiple_options = True
@@ -389,22 +396,45 @@ async def create_poll(command, db_channel):
 
     options = []
 
+    # Get the current dates
+    start_date = datetime.datetime.today()
+
+    num_options = max(6 - start_date.weekday(), 0)
+    end_date = start_date + datetime.timedelta(days=num_options)
+
+    # Calculate the date interval for the options
+    if weekly and day_param_poll_pos < len(poll_params):
+        try:
+            days = params[day_param_pos].split(',')
+
+            starting_day = int(days[0])
+            start_date = date_given_day(start_date, starting_day)
+
+            if len(days) > 1:
+                end_day = int(days[1])
+                end_date = date_given_day(start_date, end_day)
+            else:
+                num_options = max(6 - start_date.weekday(), 0)
+                end_date = start_date + datetime.timedelta(days=num_options)
+
+            # Remove this option
+            poll_params.remove(poll_params[day_param_poll_pos])
+        except ValueError:
+            pass
+
     # Create the options
     if len(poll_params[2:]) != 0 or weekly:
         # Add days of the week as options
         if weekly:
-            date = datetime.datetime.today()
-            num_options = 7 - date.weekday()
-
-            for i in range(num_options):
+            while start_date <= end_date:
                 # Name depending on the option used
                 if pt:
-                    day_name = WEEKDAYS_PT[date.weekday()]
+                    day_name = WEEKDAYS_PT[start_date.weekday()]
                 else:
-                    day_name = WEEKDAYS_EN[date.weekday()]
+                    day_name = WEEKDAYS_EN[start_date.weekday()]
 
-                options.append(models.Option(new_poll.id, len(options) + 1, '%s (%s)' % (day_name, date.day)))
-                date = date + datetime.timedelta(days=1)
+                options.append(models.Option(new_poll.id, len(options) + 1, '%s (%s)' % (day_name, start_date.day)))
+                start_date = start_date + datetime.timedelta(days=1)
 
         for option in poll_params[2:]:
             options.append(models.Option(new_poll.id, len(options) + 1, option))
@@ -415,8 +445,6 @@ async def create_poll(command, db_channel):
         options.append(models.Option(new_poll.id, 2, 'No'))
 
     session.add_all(options)
-
-    session.commit()
 
     # Create the message with the poll
     msg = await client.send_message(command.channel, create_message(command.server, new_poll, options))
@@ -429,6 +457,8 @@ async def create_poll(command, db_channel):
     for i in range(min(len(options), 9)):
         await client.add_reaction(msg, emoji + u'\u20E3')
         emoji = chr(ord(emoji) + 1)
+
+    session.commit()
 
 
 async def edit_poll(command, db_channel):
@@ -1334,6 +1364,29 @@ def remove_vote(option, participant_mention, db_options):
             vote_removed = True
 
     return vote_removed
+
+
+def date_given_day(date, day):
+    """
+    Return the date corresponding to a day.
+
+    :param day: the day.
+    """
+
+    last_day_month = (date.replace(month=(date.month + 1) % 12, day=1) - datetime.timedelta(days=1)).day
+    last_day_next_month = (date.replace(month=(date.month + 2) % 12, day=1) - datetime.timedelta(days=1)).day
+
+    # It is this month's
+    if date.day <= day <= last_day_month:
+        date = date.replace(day=day)
+    # It is next month's
+    elif 0 < day < date.day and day <= last_day_next_month:
+        if date.month == 12:
+            date = date.replace(year=date.year, month=1, day=day)
+        else:
+            date = date.replace(month=date.month + 1, day=day)
+
+    return date
 
 # endregion
 

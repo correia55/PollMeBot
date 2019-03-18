@@ -43,7 +43,7 @@ Available *settings* for the poll include:
 
 Settings can be combined together, using dash (-) followed by all the desired settings.
 
-If the poll options are supposed to be the weekdays, a shortcut can be used by adding *-weekly* (or *-weekly_pt* for the portuguese version).
+If the poll options are supposed to be the weekdays, a shortcut can be used by adding *-weekly* (or *-weekly_pt* for the portuguese version). The parameter after this is assumed to be the starting day and ending day for the options, separated by comma (,). If the parameter contains only one number, the ending day will be sunday after the starting day. If no number is provided, the starting day will be today.
 
 **Note:** the number of active polls per server is limited to 10. Creating a new poll when the limit has been reached will result in the deactivation of the oldest poll. To prevent this, close inactive polls manually (check **Close Poll** or **Remove Poll**).
 
@@ -51,6 +51,8 @@ If the poll options are supposed to be the weekdays, a shortcut can be used by a
 *!poll -n party2night "Let's party tonight?" Yes No "Only after midnight"*
 
 ![Create Poll Animation](https://raw.githubusercontent.com/correia55/PollMeBot/master/resources/create_poll.gif)
+
+*!poll -n party "When do you wanna party?" -weekly 20,25*
 
 ### Edit Poll
 
