@@ -74,7 +74,8 @@ client = discord.Client()
 CHECK_DELETED_WAIT_TIME = 43200
 
 # Limit number of polls per server
-POLL_LIMIT_SERVER = 10
+POLL_LIMIT_SERVER = 15
+
 
 # endregion
 
@@ -105,8 +106,8 @@ async def on_message(message):
         await edit_poll(message, db_channel)
     elif message.content.startswith('!poll_close '):
         await close_poll_command(message, db_channel)
-    elif message.content.startswith('!poll_remove '):
-        await remove_poll(message, db_channel)
+    elif message.content.startswith('!poll_delete '):
+        await delete_poll_command(message, db_channel)
     elif message.content.startswith('!poll_refresh '):
         await refresh_poll(message, db_channel)
     elif message.content.startswith('!poll '):
@@ -153,7 +154,8 @@ async def on_reaction_add(reaction, user):
         return
 
     # Get all options available in the poll
-    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id) \
+                        .order_by(models.Option.position).all()
 
     # Get the channel information from the DB
     db_channel = session.query(models.Channel).filter(models.Channel.discord_id == reaction.message.channel.id).first()
@@ -193,7 +195,8 @@ async def on_reaction_remove(reaction, user):
         return
 
     # Get all options available in the poll
-    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id) \
+                        .order_by(models.Option.position).all()
 
     # Get the channel information from the DB
     db_channel = session.query(models.Channel).filter(models.Channel.discord_id == reaction.message.channel.id).first()
@@ -343,42 +346,53 @@ async def create_poll(command, db_channel):
     # Get the poll with this id
     poll = session.query(models.Poll).filter(models.Poll.poll_id == poll_params[0]).first()
 
-    # If a poll with the same id already exists, close it
+    # If a poll with the same id already exists, delete it
     if poll is not None:
-        # Confirmation required before closing a poll
-        if not confirmation:
-            msg = 'A poll with that id already exists add **-y** to your command to confirm the closing of the ' \
-                  'previous poll.\nYour command: **%s**' % command.content
+        if poll.author == command.author.id:
+            # Confirmation required before deleting a poll
+            if confirmation:
+                await delete_poll(poll, db_channel, command.author.id)
+            else:
+                msg = 'A poll with that id already exists add **-y** to your command to confirm the deletion of the ' \
+                      'previous poll.\nYour command: **%s**' % command.content
+
+                await send_temp_message(msg, command.channel)
+                return
+        else:
+            msg = 'A poll with that id already exists and you cannot close it because you are not its author!'
 
             await send_temp_message(msg, command.channel)
             return
 
-        # Get all options available in the poll
-        options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
-
-        await close_poll(poll, db_channel, options, range(1, len(options) + 1))
+    num_polls = session.query(models.Poll).filter(models.Poll.server_id == server_id).count() + \
+                session.query(models.ClosedPoll).filter(models.Poll.server_id == server_id).count()
 
     # Limit the number of polls per server
-    while session.query(models.Poll).filter(models.Poll.server_id == server_id).count() >= POLL_LIMIT_SERVER:
-        # Confirmation required before closing other polls
-        if not confirmation:
-            msg = 'The server you\'re in has reached its poll limit, creating another poll will force the closing of ' \
-                  'the oldest poll still active. Add **-y** to your command to confirm the closing of the ' \
-                  'previous poll.\nYour command: **%s**' % command.content
+    if num_polls >= POLL_LIMIT_SERVER:
+        polls = session.query(models.Poll).filter(models.Poll.server_id == server_id) \
+                       .filter(models.Poll.author == command.author.id).all()
+        polls.extend(session.query(models.ClosedPoll).filter(models.ClosedPoll.server_id == server_id)
+                            .filter(models.Poll.author == command.author.id).all())
 
-            await send_temp_message(msg, command.channel)
-            return
+        msg = 'The server you\'re in has reached its poll limit, creating another poll is not possible.'
 
-        poll = session.query(models.Poll).filter(models.Poll.server_id == server_id).first()
+        if len(polls) == 0:
+            msg += 'Ask the authors of other polls to delete them.\nYour command: **%s**' % command.content
 
-        # Get all options available in the poll
-        options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
+        else:
+            msg += 'Delete one of your polls before continuing.\nList of your polls in this server:'
 
-        await close_poll(poll, db_channel, options, range(1, len(options) + 1))
+            for p in polls:
+                msg += '\n%s - !poll_delete %s' % (p.poll_id, p.poll_id)
+
+            msg += '\nYour command: **%s**' % command.content
+
+        await send_temp_message(msg, command.channel)
+        return
 
     # Create the new poll
-    new_poll = models.Poll(poll_params[0], command.author.id, poll_params[1], multiple_options, only_numbers, new_options,
-                    allow_external, db_channel.id, server_id)
+    new_poll = models.Poll(poll_params[0], command.author.id, poll_params[1], multiple_options, only_numbers,
+                           new_options, allow_external, db_channel.id, server_id)
 
     session.add(new_poll)
 
@@ -530,7 +544,8 @@ async def edit_poll(command, db_channel):
             poll_params.append(params[i].replace('"', ''))
 
     # If the command has an invalid number of parameters
-    if (len(poll_params) < 2 and (add or remove or lock or unlock)) or (len(poll_params) < 1 and not add and not remove and not lock and not unlock):
+    if (len(poll_params) < 2 and (add or remove or lock or unlock)) or \
+       (len(poll_params) < 1 and not add and not remove and not lock and not unlock):
         msg = 'Invalid parameters in command: **%s**' % command.content
 
         await send_temp_message(msg, command.channel)
@@ -556,7 +571,8 @@ async def edit_poll(command, db_channel):
         return
 
     # Get all options available in the poll
-    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id)\
+                        .order_by(models.Option.position).all()
 
     # Add the new options
     if add:
@@ -710,12 +726,13 @@ async def close_poll_command(command, db_channel):
         if poll is not None:
             # Only the author can close the poll
             if poll.author == command.author.id:
-                options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
+                options = session.query(models.Option).filter(models.Option.poll_id == poll.id)\
+                                 .order_by(models.Option.position).all()
 
                 # Send a private message to all participants in the poll
                 await send_closed_poll_message(options, command.server, poll, command.channel)
 
-                await close_poll(poll, db_channel, options, selected_options)
+                await close_poll(command.server, poll, db_channel, options, selected_options)
 
                 session.commit()
         else:
@@ -726,9 +743,9 @@ async def close_poll_command(command, db_channel):
         pass
 
 
-async def remove_poll(command, db_channel):
+async def delete_poll_command(command, db_channel):
     """
-    Remove a poll.
+    Delete a poll.
 
     :param command: the command used.
     :param db_channel: the corresponding channel entry in the DB.
@@ -736,7 +753,7 @@ async def remove_poll(command, db_channel):
 
     # If the channel does not exist in the DB
     if db_channel is None:
-        msg = 'There\'s no poll in this channel for you to remove!'
+        msg = 'There\'s no poll in this channel for you to delete!'
 
         await send_temp_message(msg, command.channel)
         return
@@ -756,22 +773,15 @@ async def remove_poll(command, db_channel):
     # Select the current poll
     poll = session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
 
+    # Check if there's a closed poll with that id
+    if poll is None:
+        poll = session.query(models.ClosedPoll).filter(models.ClosedPoll.poll_id == poll_id).first()
+
     # Delete the message with the poll
     if poll is not None:
-        # Only the author can remove the poll
-        if poll.author == command.author.id:
-            c = client.get_channel(db_channel.discord_id)
-
-            try:
-                m = await client.get_message(c, poll.message_id)
-
-                await client.delete_message(m)
-            except discord.errors.NotFound:
-                pass
-
-            session.delete(poll)
+        await delete_poll(poll, db_channel, command.author.id)
     else:
-        msg = 'There\'s no poll with that id for you to close.\nYour command: **%s**' % command.content
+        msg = 'There\'s no poll with that id for you to delete.\nYour command: **%s**' % command.content
 
         await send_temp_message(msg, command.channel)
 
@@ -828,7 +838,8 @@ async def vote_poll(command, db_channel):
         return
 
     # Get all options available in the poll
-    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id)\
+                        .order_by(models.Option.position).all()
 
     # If it is an vote for an external user and it is not allowed
     if author_id is None and not poll.allow_external:
@@ -938,7 +949,8 @@ async def unvote_poll(command, db_channel):
         return
 
     # Get all options available in the poll
-    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id)\
+                        .order_by(models.Option.position).all()
 
     poll_edited = False
 
@@ -1001,6 +1013,10 @@ async def refresh_poll(command, db_channel):
     # Select the current poll
     poll = session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
 
+    # Check if there's a closed poll with that id
+    if poll is None:
+        poll = session.query(models.ClosedPoll).filter(models.ClosedPoll.poll_id == poll_id).first()
+
     # Create the message with the poll
     # and delete the previous message
     if poll is not None:
@@ -1014,7 +1030,8 @@ async def refresh_poll(command, db_channel):
         except discord.errors.NotFound:
             pass
 
-        options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
+        options = session.query(models.Option).filter(models.Option.poll_id == poll.id)\
+                         .order_by(models.Option.position).all()
 
         msg = await client.send_message(command.channel, create_message(command.server, poll, options))
         poll.message_id = msg.id
@@ -1102,11 +1119,16 @@ def create_message(server, poll, options, selected_options=None):
     :return: the message that represents the poll.
     """
 
+    # If it is a closed poll just return the message
+    if isinstance(poll, models.ClosedPoll):
+        return poll.message
+
+    m = server.get_member(poll.author)
+
+    msg = '**%s** (poll_id: %s) (author: %s)' % (poll.question, poll.poll_id, m.mention)
+
     if selected_options is not None:
-        msg = '**%s** (Closed)' % poll.question
-    else:
-        m = server.get_member(poll.author)
-        msg = '**%s** (poll_id: %s) (author: %s)' % (poll.question, poll.poll_id, m.mention)
+        msg += ' (Closed)'
 
     for i in range(len(options)):
         # Ignore the options not selected
@@ -1162,18 +1184,19 @@ def remove_prev_vote(options, participant):
         ids.append(o.id)
 
     # Get the previous vote
-    prev_vote = session.query(models.Vote).filter(models.Vote.option_id.in_(ids))\
-        .filter(models.Vote.participant_mention == participant).first()
+    prev_vote = session.query(models.Vote).filter(models.Vote.option_id.in_(ids)) \
+                       .filter(models.Vote.participant_mention == participant).first()
 
     # If it had voted for something else remove it
     if prev_vote is not None:
         session.delete(prev_vote)
 
 
-async def close_poll(poll, db_channel, options, selected_options):
+async def close_poll(server, poll, db_channel, options, selected_options):
     """
-    Delete a poll from the DB and update the message to closed poll.
+    Close a poll from the DB and update the message.
 
+    :param server: the server where the poll was created.
     :param poll: the poll to close.
     :param db_channel: the corresponding channel entry in the DB.
     :param options: the list of options available in the poll.
@@ -1186,13 +1209,45 @@ async def close_poll(poll, db_channel, options, selected_options):
     try:
         m = await client.get_message(c, poll.message_id)
 
-        await client.edit_message(m, create_message(None, poll, options, selected_options=selected_options))
+        new_msg = create_message(server, poll, options, selected_options=selected_options)
+
+        await client.edit_message(m, new_msg)
+
+        await client.clear_reactions(m)
+
+        session.add(
+            models.ClosedPoll(poll.poll_id, poll.author, new_msg, poll.message_id, poll.channel_id, poll.server_id))
     except discord.errors.NotFound:
         pass
 
     # Delete the poll from the DB
     session.delete(poll)
     session.flush()
+
+
+async def delete_poll(poll, db_channel, command_author):
+    """
+    Delete a poll and its message.
+
+    :param poll: the poll to delete.
+    :param db_channel: the corresponding channel entry in the DB.
+    :param command_author: the author of the command.
+    """
+
+    # Only the author can delete the poll
+    if poll.author == command_author:
+        c = client.get_channel(db_channel.discord_id)
+
+        try:
+            m = await client.get_message(c, poll.message_id)
+
+            await client.delete_message(m)
+        except discord.errors.NotFound:
+            pass
+
+        # Delete the poll from the DB
+        session.delete(poll)
+        session.flush()
 
 
 async def check_messages_exist():
@@ -1272,8 +1327,8 @@ async def send_closed_poll_message(options, server, db_poll, channel):
         ids.append(o.id)
 
     # Get all the votes with different participants from this poll
-    votes = session.query(models.Vote).filter(models.Vote.option_id.in_(ids))\
-        .distinct(models.Vote.participant_id).all()
+    votes = session.query(models.Vote).filter(models.Vote.option_id.in_(ids)) \
+                   .distinct(models.Vote.participant_id).all()
 
     # Send a private message to each member that voted
     for v in votes:
@@ -1310,8 +1365,8 @@ def add_vote(option, participant_id, participant_mention, db_options, multiple_o
         if db_options[option - 1].locked:
             return False
 
-        vote = session.query(models.Vote)\
-            .filter(models.Vote.option_id == db_options[option - 1].id)\
+        vote = session.query(models.Vote) \
+            .filter(models.Vote.option_id == db_options[option - 1].id) \
             .filter(models.Vote.participant_mention == participant_mention).first()
 
         # Vote for an option if multiple options are allowed and he is yet to vote this option
@@ -1353,8 +1408,8 @@ def remove_vote(option, participant_mention, db_options):
         if db_options[option - 1].locked:
             return False
 
-        vote = session.query(models.Vote)\
-            .filter(models.Vote.option_id == db_options[option - 1].id)\
+        vote = session.query(models.Vote) \
+            .filter(models.Vote.option_id == db_options[option - 1].id) \
             .filter(models.Vote.participant_mention == participant_mention).first()
 
         if vote is not None:

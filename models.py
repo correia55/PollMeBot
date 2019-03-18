@@ -52,6 +52,26 @@ class Poll(base):
         self.server_id = server_id
 
 
+class ClosedPoll(base):
+    __tablename__ = 'ClosedPoll'
+
+    id = Column(Integer, primary_key=True)
+    poll_id = Column(String, unique=True)
+    author = Column(String)
+    message = Column(String)
+    message_id = Column(String)
+    channel_id = Column(Integer, ForeignKey('Channel.id'))
+    server_id = Column(String)
+
+    def __init__(self, poll_id, author, message, message_id, channel_id, server_id):
+        self.poll_id = poll_id
+        self.author = author
+        self.message = message
+        self.message_id = message_id
+        self.channel_id = channel_id
+        self.server_id = server_id
+
+
 class Option(base):
     __tablename__ = 'Option'
 

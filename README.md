@@ -45,7 +45,7 @@ Settings can be combined together, using dash (-) followed by all the desired se
 
 If the poll options are supposed to be the weekdays, a shortcut can be used by adding *-weekly* (or *-weekly_pt* for the portuguese version). The parameter after this is assumed to be the starting day and ending day for the options, separated by comma (,). If the parameter contains only one number, the ending day will be sunday after the starting day. If no number is provided, the starting day will be today.
 
-**Note:** the number of active polls per server is limited to 10. Creating a new poll when the limit has been reached will result in the deactivation of the oldest poll. To prevent this, close inactive polls manually (check **Close Poll** or **Remove Poll**).
+**Note:** the number of active polls per server is limited to 15. When the limit has been reached use **Delete Poll**).
 
 #### Example
 *!poll -n party2night "Let's party tonight?" Yes No "Only after midnight"*
@@ -89,16 +89,16 @@ The selected_options are a list options separated by comma (,) and no spaces, wh
 
 A poll can only be closed by its owner.
 
-### Remove Poll
+### Delete Poll
 
 ```
-!poll_remove poll_id
+!poll_delete poll_id
 ```
 
-A poll can only be removed by its owner. The difference between **Close Poll** and **Remove Poll** is that remove will also delete the message associated with the poll, while close only prevents interactions with it.
+A poll can only be deleted by its owner. The difference between **Close Poll** and **Delete Poll** is that delete will also delete the message associated with the poll, while close only prevents interactions with it.
 
 #### Example
-*!poll_remove party2night*
+*!poll_delete party2night*
 
 
 ### Refresh Poll
