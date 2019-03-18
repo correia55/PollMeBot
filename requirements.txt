@@ -1,3 +1,5 @@
+discord
 sqlalchemy
 git+https://github.com/Rapptz/discord.py
 psycopg2-binary==2.7.5
+alembic

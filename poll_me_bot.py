@@ -3,99 +3,21 @@ import discord
 import asyncio
 import datetime
 
+import alembic.config as aleconf
+import alembic.command as alecomm
+import alembic.migration as alemig
+import alembic.autogenerate as aleauto
+
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
-from sqlalchemy import Column, String, Integer, Boolean, ForeignKey
+from sqlalchemy.orm import sessionmaker
+
+import models
 
 # Names of weekdays in English and Portuguese
 WEEKDAYS_EN = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 WEEKDAYS_PT = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
 
-
-# region DB Classes
-
-# Base class for DB Classes
-base = declarative_base()
-
-
-class Channel(base):
-    __tablename__ = 'Channel'
-
-    id = Column(Integer, primary_key=True)
-    discord_id = Column(String, unique=True)
-    delete_commands = Column(Boolean)
-    delete_all = Column(Boolean)
-
-    polls = relationship('Poll', cascade='all,delete')
-
-    def __init__(self, discord_id, delete_commands=False, delete_all=False):
-        self.discord_id = discord_id
-        self.delete_commands = delete_commands
-        self.delete_all = delete_all
-
-
-class Poll(base):
-    __tablename__ = 'Poll'
-
-    id = Column(Integer, primary_key=True)
-    poll_id = Column(String, unique=True)
-    author = Column(String)
-    question = Column(String)
-    multiple_options = Column(Boolean)
-    only_numbers = Column(Boolean)
-    new_options = Column(Boolean)
-    allow_external = Column(Boolean)
-    message_id = Column(String)
-    channel_id = Column(Integer, ForeignKey('Channel.id'))
-    server_id = Column(String)
-
-    options = relationship('Option', cascade='all,delete')
-
-    def __init__(self, poll_id, author, question, multiple_options, only_numbers, new_options, allow_external, channel_id, server_id):
-        self.poll_id = poll_id
-        self.author = author
-        self.question = question
-        self.multiple_options = multiple_options
-        self.only_numbers = only_numbers
-        self.new_options = new_options
-        self.allow_external = allow_external
-        self.channel_id = channel_id
-        self.server_id = server_id
-
-
-class Option(base):
-    __tablename__ = 'Option'
-
-    id = Column(Integer, primary_key=True)
-    poll_id = Column(Integer, ForeignKey('Poll.id'))
-    option = Column(String)
-
-    votes = relationship('Vote', cascade='all,delete')
-
-    def __init__(self, poll_id, option):
-        self.poll_id = poll_id
-        self.option = option
-
-
-class Vote(base):
-    __tablename__ = 'Vote'
-
-    id = Column(Integer, primary_key=True)
-    option_id = Column(Integer, ForeignKey('Option.id'))
-    participant_id = Column(String)
-    participant_mention = Column(String)
-
-    def __init__(self, option_id, participant_id, participant_mention):
-        self.option_id = option_id
-        self.participant_id = participant_id
-        self.participant_mention = participant_mention
-
-# endregion
-
-
 # region Initialization
-
 database_url = os.environ.get('DATABASE_URL', None)
 
 if database_url is None:
@@ -105,10 +27,35 @@ if database_url is None:
 engine = create_engine(database_url)
 Session = sessionmaker(bind=engine)
 
+MIGRATIONS_DIR = './migrations/'
+
+config = aleconf.Config(file_='%salembic.ini' % MIGRATIONS_DIR)
+config.set_main_option('script_location', MIGRATIONS_DIR)
+config.set_main_option('sqlalchemy.url', database_url)
+
 # Create tables if they don't exist
-if not engine.dialect.has_table(engine, 'Channel'):
-    print('Creating Tables...')
-    base.metadata.create_all(engine)
+if not os.path.isdir(MIGRATIONS_DIR):
+    alecomm.init(config, MIGRATIONS_DIR)
+
+    env_file = open('%senv.py' % MIGRATIONS_DIR, 'r+')
+    text = env_file.read()
+    text = text.replace('target_metadata=target_metadata', 'target_metadata=target_metadata, compare_type=True')
+    text = text.replace('target_metadata = None', 'import models\ntarget_metadata = models.base.metadata')
+    env_file.seek(0)
+    env_file.write(text)
+    env_file.close()
+
+# Makes sure the database is up to date
+alecomm.upgrade(config, 'head')
+
+# Check for changes in the database
+mc = alemig.MigrationContext.configure(engine.connect())
+diff_list = aleauto.compare_metadata(mc, models.base.metadata)
+
+# Update the database
+if diff_list:
+    alecomm.revision(config, None, autogenerate=True)
+    alecomm.upgrade(config, 'head')
 
 # New Session
 session = Session()
@@ -147,7 +94,7 @@ async def on_ready():
 @client.event
 async def on_message(message):
     # Get the channel information from the DB
-    db_channel = session.query(Channel).filter(Channel.discord_id == message.channel.id).first()
+    db_channel = session.query(models.Channel).filter(models.Channel.discord_id == message.channel.id).first()
 
     is_command = True
 
@@ -193,7 +140,7 @@ async def on_reaction_add(reaction, user):
         return
 
     # Select the current poll
-    poll = session.query(Poll).filter(Poll.message_id == reaction.message.id).first()
+    poll = session.query(models.Poll).filter(models.Poll.message_id == reaction.message.id).first()
 
     # The reaction was to a message that is not a poll
     if poll is None:
@@ -206,10 +153,10 @@ async def on_reaction_add(reaction, user):
         return
 
     # Get all options available in the poll
-    db_options = session.query(Option).filter(Option.poll_id == poll.id).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
 
     # Get the channel information from the DB
-    db_channel = session.query(Channel).filter(Channel.discord_id == reaction.message.channel.id).first()
+    db_channel = session.query(models.Channel).filter(models.Channel.discord_id == reaction.message.channel.id).first()
 
     poll_edited = add_vote(option, user.id, user.mention, db_options, poll.multiple_options)
 
@@ -233,7 +180,7 @@ async def on_reaction_remove(reaction, user):
         return
 
     # Select the current poll
-    poll = session.query(Poll).filter(Poll.message_id == reaction.message.id).first()
+    poll = session.query(models.Poll).filter(models.Poll.message_id == reaction.message.id).first()
 
     # The reaction was to a message that is not a poll
     if poll is None:
@@ -246,10 +193,10 @@ async def on_reaction_remove(reaction, user):
         return
 
     # Get all options available in the poll
-    db_options = session.query(Option).filter(Option.poll_id == poll.id).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
 
     # Get the channel information from the DB
-    db_channel = session.query(Channel).filter(Channel.discord_id == reaction.message.channel.id).first()
+    db_channel = session.query(models.Channel).filter(models.Channel.discord_id == reaction.message.channel.id).first()
 
     poll_edited = remove_vote(option, user.mention, db_options)
 
@@ -308,7 +255,7 @@ async def configure_channel(command, db_channel):
 
     # Create or modify the channel with the correct configurations
     if db_channel is None:
-        db_channel = Channel(channel_id, delete_commands, delete_all)
+        db_channel = models.Channel(channel_id, delete_commands, delete_all)
 
         session.add(db_channel)
     else:
@@ -334,7 +281,7 @@ async def create_poll(command, db_channel):
 
     # Create channel if it does not already exist
     if db_channel is None:
-        db_channel = Channel(channel_id)
+        db_channel = models.Channel(channel_id)
 
         session.add(db_channel)
 
@@ -387,7 +334,7 @@ async def create_poll(command, db_channel):
         return
 
     # Get the poll with this id
-    poll = session.query(Poll).filter(Poll.poll_id == poll_params[0]).first()
+    poll = session.query(models.Poll).filter(models.Poll.poll_id == poll_params[0]).first()
 
     # If a poll with the same id already exists, close it
     if poll is not None:
@@ -400,12 +347,12 @@ async def create_poll(command, db_channel):
             return
 
         # Get all options available in the poll
-        options = session.query(Option).filter(Option.poll_id == poll.id).all()
+        options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
 
         await close_poll(poll, db_channel, options, range(1, len(options) + 1))
 
     # Limit the number of polls per server
-    while session.query(Poll).filter(Poll.server_id == server_id).count() >= POLL_LIMIT_SERVER:
+    while session.query(models.Poll).filter(models.Poll.server_id == server_id).count() >= POLL_LIMIT_SERVER:
         # Confirmation required before closing other polls
         if not confirmation:
             msg = 'The server you\'re in has reached its poll limit, creating another poll will force the closing of ' \
@@ -415,15 +362,15 @@ async def create_poll(command, db_channel):
             await send_temp_message(msg, command.channel)
             return
 
-        poll = session.query(Poll).filter(Poll.server_id == server_id).first()
+        poll = session.query(models.Poll).filter(models.Poll.server_id == server_id).first()
 
         # Get all options available in the poll
-        options = session.query(Option).filter(Option.poll_id == poll.id).all()
+        options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
 
         await close_poll(poll, db_channel, options, range(1, len(options) + 1))
 
     # Create the new poll
-    new_poll = Poll(poll_params[0], command.author.id, poll_params[1], multiple_options, only_numbers, new_options,
+    new_poll = models.Poll(poll_params[0], command.author.id, poll_params[1], multiple_options, only_numbers, new_options,
                     allow_external, db_channel.id, server_id)
 
     session.add(new_poll)
@@ -456,16 +403,16 @@ async def create_poll(command, db_channel):
                 else:
                     day_name = WEEKDAYS_EN[date.weekday()]
 
-                options.append(Option(new_poll.id, '%s (%s)' % (day_name, date.day)))
+                options.append(models.Option(new_poll.id, '%s (%s)' % (day_name, date.day)))
                 date = date + datetime.timedelta(days=1)
 
         for option in poll_params[2:]:
-            options.append(Option(new_poll.id, option))
+            options.append(models.Option(new_poll.id, option))
 
     # If no options were provided, then create the default Yes and No
     else:
-        options.append(Option(new_poll.id, 'Yes'))
-        options.append(Option(new_poll.id, 'No'))
+        options.append(models.Option(new_poll.id, 'Yes'))
+        options.append(models.Option(new_poll.id, 'No'))
 
     session.add_all(options)
 
@@ -546,7 +493,7 @@ async def edit_poll(command, db_channel):
     poll_id = poll_params[0]
 
     # Select the current poll
-    poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
+    poll = session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
 
     # If no poll was found with that id
     if poll is None:
@@ -563,7 +510,7 @@ async def edit_poll(command, db_channel):
         return
 
     # Get all options available in the poll
-    db_options = session.query(Option).filter(Option.poll_id == poll.id).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
 
     # Add the new options
     if add:
@@ -573,7 +520,7 @@ async def edit_poll(command, db_channel):
 
         # Create the options
         for option in new_options:
-            options.append(Option(poll.id, option))
+            options.append(models.Option(poll.id, option))
 
         session.add_all(options)
 
@@ -596,7 +543,7 @@ async def edit_poll(command, db_channel):
     elif remove:
         rm_options = poll_params[1]
 
-        # Option is a number
+        # models.Option is a number
         try:
             # Verify if the options are numbers
             selected_options = []
@@ -640,7 +587,7 @@ async def edit_poll(command, db_channel):
 
                         await client.remove_reaction(poll_msg, emoji + u'\u20E3', client.user)
 
-        # Option is not a number
+        # models.Option is not a number
         except ValueError:
             pass
     else:
@@ -697,7 +644,7 @@ async def close_poll_command(command, db_channel):
     # Split the selected options
     list_options = params[2].split(',')
 
-    # Options are all numbers
+    # models.Options are all numbers
     try:
         # Verify if the options are numbers
         selected_options = []
@@ -706,13 +653,13 @@ async def close_poll_command(command, db_channel):
             selected_options.append(int(o))
 
         # Select the current poll
-        poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
+        poll = session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
 
         # Edit the message with the poll
         if poll is not None:
             # Only the author can close the poll
             if poll.author == command.author.id:
-                options = session.query(Option).filter(Option.poll_id == poll.id).all()
+                options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
 
                 # Send a private message to all participants in the poll
                 await send_closed_poll_message(options, command.server, poll, command.channel)
@@ -756,7 +703,7 @@ async def remove_poll(command, db_channel):
     poll_id = params[1]
 
     # Select the current poll
-    poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
+    poll = session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
 
     # Delete the message with the poll
     if poll is not None:
@@ -782,7 +729,7 @@ async def remove_poll(command, db_channel):
 
 async def vote_poll(command, db_channel):
     """
-    Vote a list of options in a poll.
+    models.Vote a list of options in a poll.
 
     :param command: the command used.
     :param db_channel: the corresponding channel entry in the DB.
@@ -820,7 +767,7 @@ async def vote_poll(command, db_channel):
     options = params[2]
 
     # Select the current poll
-    poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
+    poll = session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
 
     # If no poll was found with that id
     if poll is None:
@@ -830,18 +777,18 @@ async def vote_poll(command, db_channel):
         return
 
     # Get all options available in the poll
-    db_options = session.query(Option).filter(Option.poll_id == poll.id).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
 
     # If it is an vote for an external user and it is not allowed
     if author_id is None and not poll.allow_external:
-        msg = 'Poll *%s* does not allow for external votes.\nIf you need this option, ask the poll author to edit it.' % poll_id
+        msg = 'models.Poll *%s* does not allow for external votes.\nIf you need this option, ask the poll author to edit it.' % poll_id
 
         await send_temp_message(msg, command.channel)
         return
 
     poll_edited = False
 
-    # Option is a list of numbers
+    # models.Option is a list of numbers
     try:
         # Verify if the options are numbers
         selected_options = []
@@ -852,7 +799,7 @@ async def vote_poll(command, db_channel):
         for option in selected_options:
             poll_edited |= add_vote(option, author_id, author_mention, db_options, poll.multiple_options)
 
-    # Option is not a list of numbers
+    # models.Option is not a list of numbers
     except ValueError:
         if poll.new_options:
             if not poll.multiple_options:
@@ -863,18 +810,18 @@ async def vote_poll(command, db_channel):
                 options = options.replace('"', '')
 
                 # Add the new option to the poll
-                options = Option(poll.id, options)
+                options = models.Option(poll.id, options)
                 db_options.append(options)
                 session.add(options)
 
                 session.flush()
 
-                vote = Vote(options.id, author_id, author_mention)
+                vote = models.Vote(options.id, author_id, author_mention)
                 session.add(vote)
 
                 poll_edited = True
         else:
-            msg = 'Poll *%s* does not allow for new votes.\nIf you need this option, ask the poll author to edit it.' % poll_id
+            msg = 'models.Poll *%s* does not allow for new votes.\nIf you need this option, ask the poll author to edit it.' % poll_id
 
             await send_temp_message(msg, command.channel)
             return
@@ -930,7 +877,7 @@ async def unvote_poll(command, db_channel):
     options = params[2]
 
     # Select the current poll
-    poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
+    poll = session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
 
     # If no poll was found with that id
     if poll is None:
@@ -940,11 +887,11 @@ async def unvote_poll(command, db_channel):
         return
 
     # Get all options available in the poll
-    db_options = session.query(Option).filter(Option.poll_id == poll.id).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
 
     poll_edited = False
 
-    # Option is a number
+    # models.Option is a number
     try:
         # Verify if the options are numbers
         selected_options = []
@@ -968,7 +915,7 @@ async def unvote_poll(command, db_channel):
 
             session.commit()
 
-    # Option is not a number
+    # models.Option is not a number
     except ValueError:
         pass
 
@@ -1001,7 +948,7 @@ async def refresh_poll(command, db_channel):
     poll_id = params[1]
 
     # Select the current poll
-    poll = session.query(Poll).filter(Poll.poll_id == poll_id).first()
+    poll = session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
 
     # Create the message with the poll
     # and delete the previous message
@@ -1016,7 +963,7 @@ async def refresh_poll(command, db_channel):
         except discord.errors.NotFound:
             pass
 
-        options = session.query(Option).filter(Option.poll_id == poll.id).all()
+        options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
 
         msg = await client.send_message(command.channel, create_message(command.server, poll, options))
         poll.message_id = msg.id
@@ -1044,17 +991,17 @@ async def help_message(command, db_channel):
 
     # Create channel if it doesn't already exist
     if db_channel is None:
-        db_channel = Channel(channel_id)
+        db_channel = models.Channel(channel_id)
 
         session.add(db_channel)
         session.commit()
 
-    msg = 'Poll Me Bot Help\n' \
+    msg = 'models.Poll Me Bot Help\n' \
           '----------------\n' \
-          'Creating a poll: *!poll poll_id "Question" "Option 1" "Option 2"*\n' \
+          'Creating a poll: *!poll poll_id "Question" "models.Option 1" "models.Option 2"*\n' \
           'Voting: *!vote poll_id list_of_numbers_separated_by_comma*\n' \
           'Removing votes: *!unvote poll_id list_of_numbers_separated_by_comma*\n' \
-          '(More options and details are available at https://github.com/correia55/PollMeBot)\n' \
+          '(More options and details are available at https://github.com/correia55/models.PollMeBot)\n' \
           '(This message will self-destruct in 30 seconds.)'
 
     await send_temp_message(msg, command.channel)
@@ -1119,7 +1066,7 @@ def create_message(server, poll, options, selected_options=None):
         msg += '\n%d - %s' % ((i + 1), options[i].option)
 
         # Get all votes for that option
-        votes = session.query(Vote).filter(Vote.option_id == options[i].id).all()
+        votes = session.query(models.Vote).filter(models.Vote.option_id == options[i].id).all()
 
         if len(votes) > 0:
             msg += ': %d votes' % len(votes)
@@ -1130,7 +1077,7 @@ def create_message(server, poll, options, selected_options=None):
             # Show the names of the voters for the option
             else:
                 msg += ' ->'
-                
+
                 for v in votes:
                     msg += ' %s' % v.participant_mention
 
@@ -1161,8 +1108,8 @@ def remove_prev_vote(options, participant):
         ids.append(o.id)
 
     # Get the previous vote
-    prev_vote = session.query(Vote).filter(Vote.option_id.in_(ids))\
-        .filter(Vote.participant_mention == participant).first()
+    prev_vote = session.query(models.Vote).filter(models.Vote.option_id.in_(ids))\
+        .filter(models.Vote.participant_mention == participant).first()
 
     # If it had voted for something else remove it
     if prev_vote is not None:
@@ -1202,7 +1149,7 @@ async def check_messages_exist():
     """
 
     while True:
-        channels = session.query(Channel).all()
+        channels = session.query(models.Channel).all()
 
         # Delete all channels that no longer exist
         for channel in channels:
@@ -1213,11 +1160,11 @@ async def check_messages_exist():
 
         session.flush()
 
-        polls = session.query(Poll).all()
+        polls = session.query(models.Poll).all()
 
         # Delete all polls that no longer exist
         for poll in polls:
-            channel = session.query(Channel).filter(Channel.id == poll.channel_id).first()
+            channel = session.query(models.Channel).filter(models.Channel.id == poll.channel_id).first()
 
             c = client.get_channel(channel.discord_id)
 
@@ -1261,7 +1208,7 @@ async def send_closed_poll_message(options, server, db_poll, channel):
 
     :param options: options available in the poll.
     :param server: the server where the poll was created.
-    :param db_poll: the Poll entry from the DB.
+    :param db_poll: the models.Poll entry from the DB.
     :param channel: the channel where the poll was created.
     """
 
@@ -1271,8 +1218,8 @@ async def send_closed_poll_message(options, server, db_poll, channel):
         ids.append(o.id)
 
     # Get all the votes with different participants from this poll
-    votes = session.query(Vote).filter(Vote.option_id.in_(ids))\
-        .distinct(Vote.participant_id).all()
+    votes = session.query(models.Vote).filter(models.Vote.option_id.in_(ids))\
+        .distinct(models.Vote.participant_id).all()
 
     # Send a private message to each member that voted
     for v in votes:
@@ -1285,7 +1232,7 @@ async def send_closed_poll_message(options, server, db_poll, channel):
                 # Don't send message to the author
                 if v.participant_id != db_poll.author:
                     try:
-                        await client.send_message(m, 'Poll %s was closed, check the results in %s!'
+                        await client.send_message(m, 'models.Poll %s was closed, check the results in %s!'
                                                   % (db_poll.poll_id, channel.mention))
                     except discord.errors.Forbidden:
                         pass
@@ -1306,14 +1253,14 @@ def add_vote(option, participant_id, participant_mention, db_options, multiple_o
 
     # If it is a valid option
     if 0 < option <= len(db_options):
-        vote = session.query(Vote)\
-            .filter(Vote.option_id == db_options[option - 1].id)\
-            .filter(Vote.participant_mention == participant_mention).first()
+        vote = session.query(models.Vote)\
+            .filter(models.Vote.option_id == db_options[option - 1].id)\
+            .filter(models.Vote.participant_mention == participant_mention).first()
 
-        # Vote for an option if multiple options are allowed and he is yet to vote this option
+        # models.Vote for an option if multiple options are allowed and he is yet to vote this option
         if multiple_options and vote is None:
             # Add the new vote
-            vote = Vote(db_options[option - 1].id, participant_id, participant_mention)
+            vote = models.Vote(db_options[option - 1].id, participant_id, participant_mention)
             session.add(vote)
 
             new_vote = True
@@ -1325,7 +1272,7 @@ def add_vote(option, participant_id, participant_mention, db_options, multiple_o
                 remove_prev_vote(db_options, participant_mention)
 
                 # Add the new vote
-                vote = Vote(db_options[option - 1].id, participant_id, participant_mention)
+                vote = models.Vote(db_options[option - 1].id, participant_id, participant_mention)
                 session.add(vote)
 
                 new_vote = True
@@ -1346,9 +1293,9 @@ def remove_vote(option, participant_mention, db_options):
 
     # If it is a valid option
     if 0 < option <= len(db_options):
-        vote = session.query(Vote)\
-            .filter(Vote.option_id == db_options[option - 1].id)\
-            .filter(Vote.participant_mention == participant_mention).first()
+        vote = session.query(models.Vote)\
+            .filter(models.Vote.option_id == db_options[option - 1].id)\
+            .filter(models.Vote.participant_mention == participant_mention).first()
 
         if vote is not None:
             # Remove the vote from this option
