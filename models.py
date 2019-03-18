@@ -1,6 +1,6 @@
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from sqlalchemy import Column, String, Integer, Boolean, ForeignKey
+from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, Date
 
 
 # Base class for DB Classes
@@ -62,14 +62,16 @@ class ClosedPoll(base):
     message_id = Column(String)
     channel_id = Column(Integer, ForeignKey('Channel.id'))
     server_id = Column(String)
+    date = Column(Date)
 
-    def __init__(self, poll_id, author, message, message_id, channel_id, server_id):
+    def __init__(self, poll_id, author, message, message_id, channel_id, server_id, date):
         self.poll_id = poll_id
         self.author = author
         self.message = message
         self.message_id = message_id
         self.channel_id = channel_id
         self.server_id = server_id
+        self.date = date
 
 
 class Option(base):

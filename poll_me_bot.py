@@ -70,8 +70,11 @@ if token is None:
 # Create a client
 client = discord.Client()
 
-# Time between checks for deleted messages and channels
-CHECK_DELETED_WAIT_TIME = 43200
+# Time between checks
+TIME_BETWEEN_CHECKS_SEC = 43200
+
+# Time after which a closed poll is deleted
+OLDEST_CLOSED_POLL_DAYS = 10
 
 # Limit number of polls per server
 POLL_LIMIT_SERVER = 15
@@ -87,8 +90,16 @@ POLL_LIMIT_SERVER = 15
 async def on_ready():
     print('The bot is ready to poll!\n-------------------------')
 
-    # Coroutine to check if the messages still exist
-    await check_messages_exist()
+    while True:
+        # Check if the messages still exist
+        await check_messages_exist()
+
+        # Delete old closed polls
+        await delete_old_closed_polls()
+
+        session.commit()
+
+        await asyncio.sleep(TIME_BETWEEN_CHECKS_SEC)
 
 
 # When a message is written in Discord
@@ -1215,8 +1226,8 @@ async def close_poll(server, poll, db_channel, options, selected_options):
 
         await client.clear_reactions(m)
 
-        session.add(
-            models.ClosedPoll(poll.poll_id, poll.author, new_msg, poll.message_id, poll.channel_id, poll.server_id))
+        session.add(models.ClosedPoll(poll.poll_id, poll.author, new_msg, poll.message_id, poll.channel_id,
+                                      poll.server_id, datetime.date.today()))
     except discord.errors.NotFound:
         pass
 
@@ -1235,7 +1246,7 @@ async def delete_poll(poll, db_channel, command_author):
     """
 
     # Only the author can delete the poll
-    if poll.author == command_author:
+    if command_author is None or poll.author == command_author:
         c = client.get_channel(db_channel.discord_id)
 
         try:
@@ -1257,36 +1268,51 @@ async def check_messages_exist():
     :return:
     """
 
-    while True:
-        channels = session.query(models.Channel).all()
+    channels = session.query(models.Channel).all()
 
-        # Delete all channels that no longer exist
-        for channel in channels:
-            c = client.get_channel(channel.discord_id)
+    # Delete all channels that no longer exist
+    for channel in channels:
+        c = client.get_channel(channel.discord_id)
 
-            if c is None:
-                session.delete(channel)
+        if c is None:
+            session.delete(channel)
 
-        session.flush()
+    session.flush()
 
-        polls = session.query(models.Poll).all()
+    polls = session.query(models.Poll).all()
 
-        # Delete all polls that no longer exist
-        for poll in polls:
+    # Delete all polls that no longer exist
+    for poll in polls:
+        channel = session.query(models.Channel).filter(models.Channel.id == poll.channel_id).first()
+
+        c = client.get_channel(channel.discord_id)
+
+        try:
+            await client.get_message(c, poll.message_id)
+        except discord.errors.NotFound:
+            session.delete(poll)
+
+    print('Checking for deleted messages and channels...Done')
+
+
+async def delete_old_closed_polls():
+    """
+    Delete old closed polls.
+
+    :return:
+    """
+
+    polls = session.query(models.ClosedPoll).all()
+
+    today = datetime.date.today()
+
+    # Delete all polls that no longer exist
+    for poll in polls:
+        if (today - poll.date).days > OLDEST_CLOSED_POLL_DAYS:
             channel = session.query(models.Channel).filter(models.Channel.id == poll.channel_id).first()
+            await delete_poll(poll, channel, None)
 
-            c = client.get_channel(channel.discord_id)
-
-            try:
-                await client.get_message(c, poll.message_id)
-            except discord.errors.NotFound:
-                session.delete(poll)
-
-        session.commit()
-
-        print('Checking for deleted messages and channels...Done')
-
-        await asyncio.sleep(CHECK_DELETED_WAIT_TIME)
+    print('Checking for old closed polls...Done')
 
 
 async def send_temp_message(message, channel, time=30):
