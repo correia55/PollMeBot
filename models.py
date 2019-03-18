@@ -57,13 +57,17 @@ class Option(base):
 
     id = Column(Integer, primary_key=True)
     poll_id = Column(Integer, ForeignKey('Poll.id'))
+    position = Column(Integer)
     option = Column(String)
+    locked = Column(Boolean)
 
     votes = relationship('Vote', cascade='all,delete')
 
-    def __init__(self, poll_id, option):
+    def __init__(self, poll_id, position, option, locked=False):
         self.poll_id = poll_id
+        self.position = position
         self.option = option
+        self.locked = locked
 
 
 class Vote(base):

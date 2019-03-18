@@ -153,7 +153,7 @@ async def on_reaction_add(reaction, user):
         return
 
     # Get all options available in the poll
-    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
 
     # Get the channel information from the DB
     db_channel = session.query(models.Channel).filter(models.Channel.discord_id == reaction.message.channel.id).first()
@@ -193,7 +193,7 @@ async def on_reaction_remove(reaction, user):
         return
 
     # Get all options available in the poll
-    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
 
     # Get the channel information from the DB
     db_channel = session.query(models.Channel).filter(models.Channel.discord_id == reaction.message.channel.id).first()
@@ -347,7 +347,7 @@ async def create_poll(command, db_channel):
             return
 
         # Get all options available in the poll
-        options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
+        options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
 
         await close_poll(poll, db_channel, options, range(1, len(options) + 1))
 
@@ -365,7 +365,7 @@ async def create_poll(command, db_channel):
         poll = session.query(models.Poll).filter(models.Poll.server_id == server_id).first()
 
         # Get all options available in the poll
-        options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
+        options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
 
         await close_poll(poll, db_channel, options, range(1, len(options) + 1))
 
@@ -403,16 +403,16 @@ async def create_poll(command, db_channel):
                 else:
                     day_name = WEEKDAYS_EN[date.weekday()]
 
-                options.append(models.Option(new_poll.id, '%s (%s)' % (day_name, date.day)))
+                options.append(models.Option(new_poll.id, len(options) + 1, '%s (%s)' % (day_name, date.day)))
                 date = date + datetime.timedelta(days=1)
 
         for option in poll_params[2:]:
-            options.append(models.Option(new_poll.id, option))
+            options.append(models.Option(new_poll.id, len(options) + 1, option))
 
     # If no options were provided, then create the default Yes and No
     else:
-        options.append(models.Option(new_poll.id, 'Yes'))
-        options.append(models.Option(new_poll.id, 'No'))
+        options.append(models.Option(new_poll.id, 1, 'Yes'))
+        options.append(models.Option(new_poll.id, 2, 'No'))
 
     session.add_all(options)
 
@@ -451,6 +451,8 @@ async def edit_poll(command, db_channel):
 
     add = False
     remove = False
+    lock = False
+    unlock = False
 
     multiple_options = False
     only_numbers = False
@@ -467,9 +469,23 @@ async def edit_poll(command, db_channel):
         if params[i] == '-add':
             add = True
             remove = False
+            lock = False
+            unlock = False
         elif params[i] == '-rm':
             remove = True
             add = False
+            lock = False
+            unlock = False
+        elif params[i] == '-lock':
+            remove = False
+            add = False
+            lock = True
+            unlock = False
+        elif params[i] == '-unlock':
+            remove = False
+            add = False
+            lock = False
+            unlock = True
         elif params[i].startswith('-'):
             if params[i].__contains__('m'):
                 multiple_options = True
@@ -484,7 +500,7 @@ async def edit_poll(command, db_channel):
             poll_params.append(params[i].replace('"', ''))
 
     # If the command has an invalid number of parameters
-    if (len(poll_params) < 2 and (add or remove)) or (len(poll_params) < 1 and not add and not remove):
+    if (len(poll_params) < 2 and (add or remove or lock or unlock)) or (len(poll_params) < 1 and not add and not remove and not lock and not unlock):
         msg = 'Invalid parameters in command: **%s**' % command.content
 
         await send_temp_message(msg, command.channel)
@@ -510,7 +526,7 @@ async def edit_poll(command, db_channel):
         return
 
     # Get all options available in the poll
-    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
 
     # Add the new options
     if add:
@@ -520,7 +536,7 @@ async def edit_poll(command, db_channel):
 
         # Create the options
         for option in new_options:
-            options.append(models.Option(poll.id, option))
+            options.append(models.Option(poll.id, len(options) + 1, option))
 
         session.add_all(options)
 
@@ -539,11 +555,11 @@ async def edit_poll(command, db_channel):
             emoji = chr(ord(emoji) + 1)
 
         db_options.extend(options)
-    # Remove options
-    elif remove:
+    # Remove, lock or unlock options
+    elif remove or lock or unlock:
         rm_options = poll_params[1]
 
-        # models.Option is a number
+        # Option is a number
         try:
             # Verify if the options are numbers
             selected_options = []
@@ -566,28 +582,33 @@ async def edit_poll(command, db_channel):
 
                 # If it is a valid option
                 if 0 < option <= num_options:
-                    # Remove the option - needs to be before the removal of reactions or it causes problems
-                    session.delete(db_options[option - 1])
-                    db_options.remove(db_options[option - 1])
+                    if remove:
+                        # Remove the option - needs to be before the removal of reactions or it causes problems
+                        session.delete(db_options[option - 1])
+                        db_options.remove(db_options[option - 1])
 
-                    # Remove the reaction for the highest option
-                    if num_options < 10:
-                        emoji = chr(ord(u'\u0031') + num_options - 1)
+                        # Remove the reaction for the highest option
+                        if num_options < 10:
+                            emoji = chr(ord(u'\u0031') + num_options - 1)
 
-                        users = None
+                            users = None
 
-                        # Get all users with that reaction
-                        for reaction in poll_msg.reactions:
-                            if reaction.emoji == (emoji + u'\u20E3'):
-                                users = await client.get_reaction_users(reaction)
+                            # Get all users with that reaction
+                            for reaction in poll_msg.reactions:
+                                if reaction.emoji == (emoji + u'\u20E3'):
+                                    users = await client.get_reaction_users(reaction)
 
-                        if users is not None:
-                            for user in users:
-                                await client.remove_reaction(poll_msg, emoji + u'\u20E3', user)
+                            if users is not None:
+                                for user in users:
+                                    await client.remove_reaction(poll_msg, emoji + u'\u20E3', user)
 
-                        await client.remove_reaction(poll_msg, emoji + u'\u20E3', client.user)
+                            await client.remove_reaction(poll_msg, emoji + u'\u20E3', client.user)
+                    elif lock:
+                        db_options[option - 1].locked = True
+                    elif unlock:
+                        db_options[option - 1].locked = False
 
-        # models.Option is not a number
+        # Option is not a number
         except ValueError:
             pass
     else:
@@ -644,7 +665,7 @@ async def close_poll_command(command, db_channel):
     # Split the selected options
     list_options = params[2].split(',')
 
-    # models.Options are all numbers
+    # Options are all numbers
     try:
         # Verify if the options are numbers
         selected_options = []
@@ -659,7 +680,7 @@ async def close_poll_command(command, db_channel):
         if poll is not None:
             # Only the author can close the poll
             if poll.author == command.author.id:
-                options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
+                options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
 
                 # Send a private message to all participants in the poll
                 await send_closed_poll_message(options, command.server, poll, command.channel)
@@ -777,7 +798,7 @@ async def vote_poll(command, db_channel):
         return
 
     # Get all options available in the poll
-    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
 
     # If it is an vote for an external user and it is not allowed
     if author_id is None and not poll.allow_external:
@@ -788,7 +809,7 @@ async def vote_poll(command, db_channel):
 
     poll_edited = False
 
-    # models.Option is a list of numbers
+    # Option is a list of numbers
     try:
         # Verify if the options are numbers
         selected_options = []
@@ -799,7 +820,7 @@ async def vote_poll(command, db_channel):
         for option in selected_options:
             poll_edited |= add_vote(option, author_id, author_mention, db_options, poll.multiple_options)
 
-    # models.Option is not a list of numbers
+    # Option is not a list of numbers
     except ValueError:
         if poll.new_options:
             if not poll.multiple_options:
@@ -810,7 +831,7 @@ async def vote_poll(command, db_channel):
                 options = options.replace('"', '')
 
                 # Add the new option to the poll
-                options = models.Option(poll.id, options)
+                options = models.Option(poll.id, len(db_options) + 1, options)
                 db_options.append(options)
                 session.add(options)
 
@@ -887,11 +908,11 @@ async def unvote_poll(command, db_channel):
         return
 
     # Get all options available in the poll
-    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
 
     poll_edited = False
 
-    # models.Option is a number
+    # Option is a number
     try:
         # Verify if the options are numbers
         selected_options = []
@@ -915,7 +936,7 @@ async def unvote_poll(command, db_channel):
 
             session.commit()
 
-    # models.Option is not a number
+    # Option is not a number
     except ValueError:
         pass
 
@@ -963,7 +984,7 @@ async def refresh_poll(command, db_channel):
         except discord.errors.NotFound:
             pass
 
-        options = session.query(models.Option).filter(models.Option.poll_id == poll.id).all()
+        options = session.query(models.Option).filter(models.Option.poll_id == poll.id).order_by(models.Option.position).all()
 
         msg = await client.send_message(command.channel, create_message(command.server, poll, options))
         poll.message_id = msg.id
@@ -998,7 +1019,7 @@ async def help_message(command, db_channel):
 
     msg = 'models.Poll Me Bot Help\n' \
           '----------------\n' \
-          'Creating a poll: *!poll poll_id "Question" "models.Option 1" "models.Option 2"*\n' \
+          'Creating a poll: *!poll poll_id "Question" "Option 1" "Option 2"*\n' \
           'Voting: *!vote poll_id list_of_numbers_separated_by_comma*\n' \
           'Removing votes: *!unvote poll_id list_of_numbers_separated_by_comma*\n' \
           '(More options and details are available at https://github.com/correia55/models.PollMeBot)\n' \
@@ -1080,6 +1101,9 @@ def create_message(server, poll, options, selected_options=None):
 
                 for v in votes:
                     msg += ' %s' % v.participant_mention
+
+        if options[i].locked:
+            msg += ' (locked)'
 
     if selected_options is None:
         if poll.new_options:
@@ -1253,11 +1277,14 @@ def add_vote(option, participant_id, participant_mention, db_options, multiple_o
 
     # If it is a valid option
     if 0 < option <= len(db_options):
+        if db_options[option - 1].locked:
+            return False
+
         vote = session.query(models.Vote)\
             .filter(models.Vote.option_id == db_options[option - 1].id)\
             .filter(models.Vote.participant_mention == participant_mention).first()
 
-        # models.Vote for an option if multiple options are allowed and he is yet to vote this option
+        # Vote for an option if multiple options are allowed and he is yet to vote this option
         if multiple_options and vote is None:
             # Add the new vote
             vote = models.Vote(db_options[option - 1].id, participant_id, participant_mention)
@@ -1293,6 +1320,9 @@ def remove_vote(option, participant_mention, db_options):
 
     # If it is a valid option
     if 0 < option <= len(db_options):
+        if db_options[option - 1].locked:
+            return False
+
         vote = session.query(models.Vote)\
             .filter(models.Vote.option_id == db_options[option - 1].id)\
             .filter(models.Vote.participant_mention == participant_mention).first()

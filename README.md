@@ -62,7 +62,9 @@ Depending on whether you want to edit the question, settings or options, you sho
 
 * to edit the question or settings - use the base command and add the new settings as in **Create Poll**, using dash (-), or add the new question. You cannot change both with the same command;
 * to add options - use the base command and add *-add* followed by the list of options, formatted similarly to **Create Poll**;
-* to remove options - use the base command and add *-rm* followed by the list of options, using their number ids separated by comma (,) and no spaces.
+* to remove options - use the base command and add *-rm* followed by the list of options, using their number ids separated by comma (,) and no spaces;
+* to lock options - use the base command and add *-lock* followed by the list of options, using their number ids separated by comma (,) and no spaces;
+* to unlock options - use the base command and add *-unlock* followed by the list of options, using their number ids separated by comma (,) and no spaces.
 
 A poll can only be edited by its owner.
 
