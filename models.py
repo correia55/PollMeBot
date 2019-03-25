@@ -1,6 +1,8 @@
+import datetime
+
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, Date
+from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, Date, DateTime
 
 
 # Base class for DB Classes
@@ -37,6 +39,7 @@ class Poll(base):
     message_id = Column(String)
     channel_id = Column(Integer, ForeignKey('Channel.id'))
     server_id = Column(String)
+    created_datetime = Column(DateTime, default=datetime.datetime.utcnow)
 
     options = relationship('Option', cascade='all,delete')
 
@@ -99,6 +102,7 @@ class Vote(base):
     option_id = Column(Integer, ForeignKey('Option.id'))
     participant_id = Column(String)
     participant_mention = Column(String)
+    vote_datetime = Column(DateTime, default=datetime.datetime.utcnow)
 
     def __init__(self, option_id, participant_id, participant_mention):
         self.option_id = option_id
