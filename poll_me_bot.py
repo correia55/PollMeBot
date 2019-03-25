@@ -183,7 +183,9 @@ async def on_reaction_add(reaction, user):
         except discord.errors.NotFound:
             session.delete(poll)
 
-    session.commit()
+        session.commit()
+
+        print('%s reacted in %s!' % (user.mention, poll.poll_id))
 
 
 # When a reaction is removed in Discord
@@ -223,6 +225,10 @@ async def on_reaction_remove(reaction, user):
             await client.edit_message(m, create_message(reaction.message.server, poll, db_options))
         except discord.errors.NotFound:
             session.delete(poll)
+
+        session.commit()
+
+        print('%s removed reaction from %s!' % (user.mention, poll.poll_id))
 
 # endregion
 
@@ -277,6 +283,8 @@ async def configure_channel(command, db_channel):
         db_channel.delete_all = delete_all
 
     session.commit()
+
+    print('Channel %s from %s configured!' % (command.channel.name, command.server.name))
 
 
 async def create_poll(command, db_channel):
@@ -485,6 +493,8 @@ async def create_poll(command, db_channel):
 
     session.commit()
 
+    print('Poll %s created!' % new_poll.poll_id)
+
 
 async def edit_poll(command, db_channel):
     """
@@ -691,6 +701,8 @@ async def edit_poll(command, db_channel):
 
     session.commit()
 
+    print('Poll %s created!' % poll.poll_id)
+
 
 async def close_poll_command(command, db_channel):
     """
@@ -746,6 +758,8 @@ async def close_poll_command(command, db_channel):
                 await close_poll(command.server, poll, db_channel, options, selected_options)
 
                 session.commit()
+
+                print('Poll %s closed!' % poll.poll_id)
         else:
             msg = 'There\'s no poll with that id for you to close.\nYour command: **%s**' % command.content
 
@@ -797,6 +811,8 @@ async def delete_poll_command(command, db_channel):
         await send_temp_message(msg, command.channel)
 
     session.commit()
+
+    print('Poll %s deleted!' % poll.poll_id)
 
 
 async def vote_poll(command, db_channel):
@@ -911,6 +927,8 @@ async def vote_poll(command, db_channel):
 
     session.commit()
 
+    print('%s voted in %s!' % (author_mention, poll.poll_id))
+
 
 async def unvote_poll(command, db_channel):
     """
@@ -989,6 +1007,8 @@ async def unvote_poll(command, db_channel):
 
             session.commit()
 
+            print('%s removed vote from %s!' % (author_mention, poll.poll_id))
+
     # Option is not a number
     except ValueError:
         pass
@@ -1048,6 +1068,8 @@ async def refresh_poll(command, db_channel):
         poll.message_id = msg.id
 
         session.commit()
+
+        print('Poll %s refreshed!' % poll.poll_id)
 
         # Add a reaction for each option, with 9 being the max number of reactions
         emoji = u'\u0031'
