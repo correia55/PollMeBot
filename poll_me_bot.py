@@ -90,6 +90,8 @@ POLL_LIMIT_SERVER = 15
 async def on_ready():
     print('The bot is ready to poll!\n-------------------------')
 
+    await refresh_all_polls()
+
     while True:
         # Check if the messages still exist
         await check_messages_exist()
@@ -120,7 +122,7 @@ async def on_message(message):
     elif message.content.startswith('!poll_delete '):
         await delete_poll_command(message, db_channel)
     elif message.content.startswith('!poll_refresh '):
-        await refresh_poll(message, db_channel)
+        await refresh_poll_command(message, db_channel)
     elif message.content.startswith('!poll '):
         await create_poll(message, db_channel)
     elif message.content.startswith('!vote '):
@@ -383,14 +385,14 @@ async def create_poll(command, db_channel):
             await send_temp_message(msg, command.channel)
             return
 
-    num_polls = session.query(models.Poll).filter(models.Poll.server_id == server_id).count() + \
-                session.query(models.ClosedPoll).filter(models.Poll.server_id == server_id).count()
+    num_polls = session.query(models.Poll).filter(models.Poll.discord_server_id == server_id).count() + \
+                session.query(models.ClosedPoll).filter(models.Poll.discord_server_id == server_id).count()
 
     # Limit the number of polls per server
     if num_polls >= POLL_LIMIT_SERVER:
-        polls = session.query(models.Poll).filter(models.Poll.server_id == server_id) \
+        polls = session.query(models.Poll).filter(models.Poll.discord_server_id == server_id) \
                        .filter(models.Poll.author == command.author.id).all()
-        polls.extend(session.query(models.ClosedPoll).filter(models.ClosedPoll.server_id == server_id)
+        polls.extend(session.query(models.ClosedPoll).filter(models.ClosedPoll.discord_server_id == server_id)
                             .filter(models.Poll.author == command.author.id).all())
 
         msg = 'The server you\'re in has reached its poll limit, creating another poll is not possible.'
@@ -566,7 +568,7 @@ async def edit_poll(command, db_channel):
 
     # If the command has an invalid number of parameters
     if (len(poll_params) < 2 and (add or remove or lock or unlock)) or \
-       (len(poll_params) < 1 and not add and not remove and not lock and not unlock):
+        (len(poll_params) < 1 and not add and not remove and not lock and not unlock):
         msg = 'Invalid parameters in command: **%s**' % command.content
 
         await send_temp_message(msg, command.channel)
@@ -592,7 +594,7 @@ async def edit_poll(command, db_channel):
         return
 
     # Get all options available in the poll
-    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id)\
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id) \
                         .order_by(models.Option.position).all()
 
     # Add the new options
@@ -749,7 +751,7 @@ async def close_poll_command(command, db_channel):
         if poll is not None:
             # Only the author can close the poll
             if poll.author == command.author.id:
-                options = session.query(models.Option).filter(models.Option.poll_id == poll.id)\
+                options = session.query(models.Option).filter(models.Option.poll_id == poll.id) \
                                  .order_by(models.Option.position).all()
 
                 # Send a private message to all participants in the poll
@@ -865,7 +867,7 @@ async def vote_poll(command, db_channel):
         return
 
     # Get all options available in the poll
-    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id)\
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id) \
                         .order_by(models.Option.position).all()
 
     # If it is an vote for an external user and it is not allowed
@@ -978,7 +980,7 @@ async def unvote_poll(command, db_channel):
         return
 
     # Get all options available in the poll
-    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id)\
+    db_options = session.query(models.Option).filter(models.Option.poll_id == poll.id) \
                         .order_by(models.Option.position).all()
 
     poll_edited = False
@@ -1014,7 +1016,7 @@ async def unvote_poll(command, db_channel):
         pass
 
 
-async def refresh_poll(command, db_channel):
+async def refresh_poll_command(command, db_channel):
     """
     Show a pole in a new message.
 
@@ -1051,32 +1053,7 @@ async def refresh_poll(command, db_channel):
     # Create the message with the poll
     # and delete the previous message
     if poll is not None:
-        c = client.get_channel(db_channel.discord_id)
-
-        # Delete this message
-        try:
-            m = await client.get_message(c, poll.message_id)
-
-            await client.delete_message(m)
-        except discord.errors.NotFound:
-            pass
-
-        options = session.query(models.Option).filter(models.Option.poll_id == poll.id)\
-                         .order_by(models.Option.position).all()
-
-        msg = await client.send_message(command.channel, create_message(command.server, poll, options))
-        poll.message_id = msg.id
-
-        session.commit()
-
-        print('Poll %s refreshed!' % poll.poll_id)
-
-        # Add a reaction for each option, with 9 being the max number of reactions
-        emoji = u'\u0031'
-
-        for i in range(min(len(options), 9)):
-            await client.add_reaction(msg, emoji + u'\u20E3')
-            emoji = chr(ord(emoji) + 1)
+        await refresh_poll(poll, db_channel.discord_id, command.server)
 
 
 async def help_message(command, db_channel):
@@ -1249,7 +1226,7 @@ async def close_poll(server, poll, db_channel, options, selected_options):
         await client.clear_reactions(m)
 
         session.add(models.ClosedPoll(poll.poll_id, poll.author, new_msg, poll.message_id, poll.channel_id,
-                                      poll.server_id, datetime.date.today()))
+                                      poll.discord_server_id, datetime.date.today()))
     except discord.errors.NotFound:
         pass
 
@@ -1490,6 +1467,61 @@ def date_given_day(date, day):
             date = date.replace(month=date.month + 1, day=day)
 
     return date
+
+
+async def refresh_poll(poll, channel_discord_id, discord_server):
+    """
+    Refresh a poll, deleting the current message and creating a new one.
+
+    :param poll: the poll being refreshed.
+    :param channel_discord_id: the id of the discord channel.
+    :param discord_server: the discord server where the channel belongs.
+    """
+
+    c = client.get_channel(channel_discord_id)
+
+    # Delete this message
+    try:
+        m = await client.get_message(c, poll.message_id)
+
+        await client.delete_message(m)
+    except discord.errors.NotFound:
+        pass
+
+    options = session.query(models.Option).filter(models.Option.poll_id == poll.id) \
+        .order_by(models.Option.position).all()
+
+    msg = await client.send_message(c, create_message(discord_server, poll, options))
+    poll.message_id = msg.id
+
+    session.commit()
+
+    print('Poll %s refreshed!' % poll.poll_id)
+
+    # Add a reaction for each option, with 9 being the max number of reactions
+    emoji = u'\u0031'
+
+    for i in range(min(len(options), 9)):
+        await client.add_reaction(msg, emoji + u'\u20E3')
+        emoji = chr(ord(emoji) + 1)
+
+
+async def refresh_all_polls():
+    """Refresh all polls, making sure reactions still work when the application is restarted."""
+
+    polls = session.query(models.Poll).all()
+
+    polls += session.query(models.ClosedPoll).all()
+
+    for p in polls:
+        db_channel = session.query(models.Channel).filter(models.Channel.id == p.channel_id).first()
+        s = client.get_server(p.discord_server_id)
+
+        if db_channel is not None and s is not None:
+            await refresh_poll(p, db_channel.discord_id, s)
+
+    print('Refreshing all polls...Done')
+
 
 # endregion
 

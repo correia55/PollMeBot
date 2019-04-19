@@ -38,12 +38,12 @@ class Poll(base):
     allow_external = Column(Boolean)
     message_id = Column(String)
     channel_id = Column(Integer, ForeignKey('Channel.id'))
-    server_id = Column(String)
+    discord_server_id = Column(String)
     created_datetime = Column(DateTime, default=datetime.datetime.utcnow)
 
     options = relationship('Option', cascade='all,delete')
 
-    def __init__(self, poll_id, author, question, multiple_options, only_numbers, new_options, allow_external, channel_id, server_id):
+    def __init__(self, poll_id, author, question, multiple_options, only_numbers, new_options, allow_external, channel_id, discord_server_id):
         self.poll_id = poll_id
         self.author = author
         self.question = question
@@ -52,7 +52,7 @@ class Poll(base):
         self.new_options = new_options
         self.allow_external = allow_external
         self.channel_id = channel_id
-        self.server_id = server_id
+        self.discord_server_id = discord_server_id
 
 
 class ClosedPoll(base):
@@ -64,16 +64,16 @@ class ClosedPoll(base):
     message = Column(String)
     message_id = Column(String)
     channel_id = Column(Integer, ForeignKey('Channel.id'))
-    server_id = Column(String)
+    discord_server_id = Column(String)
     date = Column(Date)
 
-    def __init__(self, poll_id, author, message, message_id, channel_id, server_id, date):
+    def __init__(self, poll_id, author, message, message_id, channel_id, discord_server_id, date):
         self.poll_id = poll_id
         self.author = author
         self.message = message
         self.message_id = message_id
         self.channel_id = channel_id
-        self.server_id = server_id
+        self.discord_server_id = discord_server_id
         self.date = date
 
 

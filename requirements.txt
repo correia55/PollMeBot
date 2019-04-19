@@ -1,4 +1,4 @@
 discord==0.16.12
 psycopg2-binary==2.7.5
-sqlalchemy==1.2.11
+sqlalchemy==1.3.3
 alembic==1.0.8
