@@ -25,14 +25,14 @@ A channel can only be configure by an administrator.
 ### Create Poll
 
 ```
-!poll <settings> poll_id question <response_options>
+!poll <settings> poll_key question <response_options>
 ```
 
 If no response options are provided, the default responses are Yes and No.
 
-The poll_id is used for referring to this specific poll. It can be any string without spaces.
+The poll_key is used for referring to this specific poll. It can be any string without spaces.
 
-The first parameter that does not start with a dash is considered to be the poll_id, the next one the question and all of the following, the response options. If any of these parameters contains spaces, then they should be surrounded by quotation marks.
+The first parameter that does not start with a dash is considered to be the poll_key, the next one the question and all of the following, the response options. If any of these parameters contains spaces, then they should be surrounded by quotation marks.
 
 Available *settings* for the poll include:
 * *-m* - each user may vote in multiple options;
@@ -59,7 +59,7 @@ If the poll options are supposed to be the weekdays, a shortcut can be used by a
 Depending on whether you want to edit the question, settings or options, you should use one of the following variants of the command:
 
 ```
-!poll_edit poll_id
+!poll_edit poll_key
 ```
 
 * to edit the question or settings - use the base command and add the new settings as in **Create Poll**, using dash (-), or add the new question. You cannot change both with the same command;
@@ -83,7 +83,7 @@ A poll can only be edited by its owner.
 ### Close Poll
 
 ```
-!poll_close poll_id selected_options
+!poll_close poll_key selected_options
 ```
 The selected_options are a list options separated by comma (,) and no spaces, which will be displayed in the closed poll.
 
@@ -92,7 +92,7 @@ A poll can only be closed by its owner.
 ### Delete Poll
 
 ```
-!poll_delete poll_id
+!poll_delete poll_key
 ```
 
 A poll can only be deleted by its owner. The difference between **Close Poll** and **Delete Poll** is that delete will also delete the message associated with the poll, while close only prevents interactions with it.
@@ -104,7 +104,7 @@ A poll can only be deleted by its owner. The difference between **Close Poll** a
 ### Refresh Poll
 
 ```
-!poll_refresh poll_id
+!poll_refresh poll_key
 ```
 
 Refreshing a poll means a new message will be created with the poll, saving you the trouble of trying to find the previous location of the poll.
@@ -116,18 +116,18 @@ Refreshing a poll means a new message will be created with the poll, saving you 
 ### Vote Poll
 
 ```
-!vote poll_id selected_options
+!vote poll_key selected_options
 ```
 The selected_options are a list of options separated by comma (,).
 
 If the poll allows for new options to be created, the command followed by the new option within quotation marks (") can be used instead:
 ```
-!vote poll_id "New option"
+!vote poll_key "New option"
 ```
 
 If the poll allows for external votes, to vote for an external user simply add -e followed by the voter's name within quotation marks ("), as in:
 ```
-!vote poll_id selected_options -e "External voter's name"
+!vote poll_key selected_options -e "External voter's name"
 ```
 
 Users can now also vote by reacting to the number of the option they desire.
@@ -148,7 +148,7 @@ Users can now also vote by reacting to the number of the option they desire.
 ### Unvote Poll
 
 ```
-!unvote poll_id selected_options
+!unvote poll_key selected_options
 ```
 
 Remove vote from a list of options in the poll.

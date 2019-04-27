@@ -64,7 +64,7 @@ async def on_message(message):
     if db_channel is not None:
         try:
             # Delete all messages that were not sent by the bot
-            if db_channel.delete_all and message.discord_author_id != config.client.user:
+            if db_channel.delete_all and message.author != config.client.user:
                 await config.client.delete_message(message)
             # Delete all messages associated with a command
             elif db_channel.delete_commands and is_command:
@@ -80,7 +80,7 @@ async def on_reaction_add(reaction, user):
         return
 
     # Select the current poll
-    poll = config.session.query(models.Poll).filter(models.Poll.message_id == reaction.message.id).first()
+    poll = config.session.query(models.Poll).filter(models.Poll.discord_message_id == reaction.message.id).first()
 
     # The reaction was to a message that is not a poll
     if poll is None:
@@ -107,14 +107,14 @@ async def on_reaction_add(reaction, user):
         c = config.client.get_channel(db_channel.discord_id)
 
         try:
-            m = await config.client.get_message(c, poll.message_id)
+            m = await config.client.get_message(c, poll.discord_message_id)
             await config.client.edit_message(m, auxiliary.create_message(reaction.message.server, poll, db_options))
         except discord.errors.NotFound:
             config.session.delete(poll)
 
         config.session.commit()
 
-        print('%s reacted in %s!' % (user.mention, poll.poll_id))
+        print('%s reacted in %s!' % (user.mention, poll.poll_key))
 
 
 # When a reaction is removed in Discord
@@ -124,7 +124,7 @@ async def on_reaction_remove(reaction, user):
         return
 
     # Select the current poll
-    poll = config.session.query(models.Poll).filter(models.Poll.message_id == reaction.message.id).first()
+    poll = config.session.query(models.Poll).filter(models.Poll.discord_message_id == reaction.message.id).first()
 
     # The reaction was to a message that is not a poll
     if poll is None:
@@ -144,21 +144,21 @@ async def on_reaction_remove(reaction, user):
     db_channel = config.session.query(models.Channel).filter(models.Channel.discord_id == reaction.message.channel.id) \
                        .first()
 
-    poll_edited = auxiliary.remove_vote(option, user.id, db_options)
+    poll_edited = auxiliary.remove_vote(option, user.mention, db_options)
 
     # Edit the message
     if poll_edited:
         c = config.client.get_channel(db_channel.discord_id)
 
         try:
-            m = await config.client.get_message(c, poll.message_id)
+            m = await config.client.get_message(c, poll.discord_message_id)
             await config.client.edit_message(m, auxiliary.create_message(reaction.message.server, poll, db_options))
         except discord.errors.NotFound:
             config.session.delete(poll)
 
         config.session.commit()
 
-        print('%s removed reaction from %s!' % (user.mention, poll.poll_id))
+        print('%s removed reaction from %s!' % (user.mention, poll.poll_key))
 
 # Run the bot
 config.client.run(config.token)

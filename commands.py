@@ -27,8 +27,9 @@ async def configure_channel_command(command, db_channel):
         await auxiliary.send_temp_message(msg, command.channel)
         return
 
-    # The id of the Discord channel where the message was sent
-    channel_id = command.channel.id
+    # The ids of the Discord channel and server where the message was sent
+    discord_channel_id = command.channel.id
+    discord_server_id = command.server.id
 
     # Get the list of parameters in the message
     params = auxiliary.parse_command_parameters(command.content)
@@ -51,7 +52,7 @@ async def configure_channel_command(command, db_channel):
 
     # Create or modify the channel with the correct configurations
     if db_channel is None:
-        db_channel = models.Channel(channel_id, delete_commands, delete_all)
+        db_channel = models.Channel(discord_channel_id, discord_server_id, delete_commands, delete_all)
 
         config.session.add(db_channel)
     else:
@@ -71,15 +72,13 @@ async def create_poll_command(command, db_channel):
     :param db_channel: the corresponding channel entry in the DB.
     """
 
-    # The id of the Discord channel where the message was sent
-    channel_id = command.channel.id
-
-    # The id of the Discord server where the message was sent
-    server_id = command.server.id
+    # The ids of the Discord channel and server where the message was sent
+    discord_channel_id = command.channel.id
+    discord_server_id = command.server.id
 
     # Create channel if it does not already exist
     if db_channel is None:
-        db_channel = models.Channel(channel_id)
+        db_channel = models.Channel(discord_channel_id, discord_server_id)
 
         config.session.add(db_channel)
 
@@ -139,11 +138,11 @@ async def create_poll_command(command, db_channel):
         return
 
     # Get the poll with this id
-    poll = config.session.query(models.Poll).filter(models.Poll.poll_id == poll_params[0]).first()
+    poll = config.session.query(models.Poll).filter(models.Poll.poll_key == poll_params[0]).first()
 
     # If a poll with the same id already exists, delete it
     if poll is not None:
-        if poll.author == command.author.id:
+        if poll.discord_author_id == command.author.id:
             # Confirmation required before deleting a poll
             if confirmation:
                 await auxiliary.delete_poll(poll, db_channel, command.author.id)
@@ -159,15 +158,12 @@ async def create_poll_command(command, db_channel):
             await auxiliary.send_temp_message(msg, command.channel)
             return
 
-    num_polls = config.session.query(models.Poll).filter(models.Poll.discord_server_id == server_id).count() + \
-                config.session.query(models.ClosedPoll).filter(models.Poll.discord_server_id == server_id).count()
+    num_polls = config.session.query(models.Poll).filter(models.Poll.discord_server_id == discord_server_id).count()
 
     # Limit the number of polls per server
     if num_polls >= config.POLL_LIMIT_SERVER:
-        polls = config.session.query(models.Poll).filter(models.Poll.discord_server_id == server_id) \
-                       .filter(models.Poll.author == command.author.id).all()
-        polls.extend(config.session.query(models.ClosedPoll).filter(models.ClosedPoll.discord_server_id == server_id)
-                           .filter(models.Poll.author == command.author.id).all())
+        polls = config.session.query(models.Poll).filter(models.Poll.discord_server_id == discord_server_id) \
+                       .filter(models.Poll.discord_author_id == command.author.id).all()
 
         msg = 'The server you\'re in has reached its poll limit, creating another poll is not possible.'
 
@@ -178,7 +174,7 @@ async def create_poll_command(command, db_channel):
             msg += 'Delete one of your polls before continuing.\nList of your polls in this server:'
 
             for p in polls:
-                msg += '\n%s - !poll_delete %s' % (p.poll_id, p.poll_id)
+                msg += '\n%s - !poll_delete %s' % (p.poll_key, p.poll_key)
 
             msg += '\nYour command: **%s**' % command.content
 
@@ -187,16 +183,16 @@ async def create_poll_command(command, db_channel):
 
     # Create the new poll
     new_poll = models.Poll(poll_params[0], command.author.id, poll_params[1], multiple_options, only_numbers,
-                           new_options, allow_external, db_channel.id, server_id)
+                           new_options, allow_external, db_channel.id, discord_server_id)
 
     config.session.add(new_poll)
 
     # Send a private message to each member in the server
     for m in command.server.members:
-        if m != config.client.user and m.id != new_poll.author:
+        if m != config.client.user and m.id != new_poll.discord_author_id:
             try:
                 await config.client.send_message(m, 'A new poll (%s) has been created in %s!'
-                                                 % (new_poll.poll_id, command.channel.mention))
+                                          % (new_poll.poll_key, command.channel.mention))
             except discord.errors.Forbidden:
                 pass
 
@@ -258,7 +254,7 @@ async def create_poll_command(command, db_channel):
     # Create the message with the poll
     msg = await config.client.send_message(command.channel, auxiliary.create_message(command.server, new_poll, options))
 
-    new_poll.message_id = msg.id
+    new_poll.discord_message_id = msg.id
 
     # Add a reaction for each option, with 9 being the max number of reactions
     emoji = u'\u0031'
@@ -269,7 +265,7 @@ async def create_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s created!' % new_poll.poll_id)
+    print('Poll %s created!' % new_poll.poll_key)
 
 
 async def edit_poll_command(command, db_channel):
@@ -348,10 +344,10 @@ async def edit_poll_command(command, db_channel):
         await auxiliary.send_temp_message(msg, command.channel)
         return
 
-    poll_id = poll_params[0]
+    poll_key = poll_params[0]
 
     # Select the current poll
-    poll = config.session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
+    poll = config.session.query(models.Poll).filter(models.Poll.poll_key == poll_key).first()
 
     # If no poll was found with that id
     if poll is None:
@@ -361,7 +357,7 @@ async def edit_poll_command(command, db_channel):
         return
 
     # Only the author can edit
-    if poll.author != command.author.id:
+    if poll.discord_author_id != command.author.id:
         msg = 'Only the author of a poll can edit it!'
 
         await auxiliary.send_temp_message(msg, command.channel)
@@ -379,13 +375,13 @@ async def edit_poll_command(command, db_channel):
 
         # Create the options
         for option in new_options:
-            options.append(models.Option(poll.id, len(options) + 1, option))
+            options.append(models.Option(poll.id, len(db_options) + len(options) + 1, option))
 
         config.session.add_all(options)
 
         # Get the message corresponding to the poll
         c = config.client.get_channel(db_channel.discord_id)
-        poll_msg = await config.client.get_message(c, poll.message_id)
+        discord_poll_msg = await config.client.get_message(c, poll.discord_message_id)
 
         # Add a reaction for each new option
         emoji = chr(ord(u'\u0031') + len(db_options))
@@ -394,7 +390,7 @@ async def edit_poll_command(command, db_channel):
         num_react = min(9, len(db_options) + len(options))
 
         for i in range(max(0, num_react - len(db_options))):
-            await config.client.add_reaction(poll_msg, emoji + u'\u20E3')
+            await config.client.add_reaction(discord_poll_msg, emoji + u'\u20E3')
             emoji = chr(ord(emoji) + 1)
 
         db_options.extend(options)
@@ -413,43 +409,42 @@ async def edit_poll_command(command, db_channel):
             # Removes duplicates in the list
             selected_options = list(set(selected_options))
 
-            # Sort list in decreasing order, preventing incorrect removal of options
-            selected_options.sort(reverse=True)
+            if remove:
+                options = config.session.query(models.Option).filter(models.Option.position.in_(selected_options)).all()
+                num_reactions = max(10 - len(db_options) - len(options), 0)
 
-            # Get the message corresponding to the poll
-            c = config.client.get_channel(db_channel.discord_id)
-            poll_msg = await config.client.get_message(c, poll.message_id)
+                for option in options:
+                    config.session.delete(option)
 
-            for option in selected_options:
-                num_options = len(db_options)
+                # Get the message corresponding to the poll
+                c = config.client.get_channel(db_channel.discord_id)
+                discord_poll_msg = await config.client.get_message(c, poll.discord_message_id)
 
-                # If it is a valid option
-                if 0 < option <= num_options:
-                    if remove:
-                        # Remove the option - needs to be before the removal of reactions or it causes problems
-                        config.session.delete(db_options[option - 1])
-                        db_options.remove(db_options[option - 1])
+                db_options = config.session.query(models.Option).filter(models.Option.poll_id == poll.id) \
+                    .order_by(models.Option.position).all()
 
-                        # Remove the reaction for the highest option
-                        if num_options < 10:
-                            emoji = chr(ord(u'\u0031') + num_options - 1)
+                for i in range(num_reactions):
+                    emoji = chr(ord(u'\u0031') + len(db_options) + i)
 
-                            users = None
+                    await auxiliary.remove_reaction(discord_poll_msg, emoji)
 
-                            # Get all users with that reaction
-                            for reaction in poll_msg.reactions:
-                                if reaction.emoji == (emoji + u'\u20E3'):
-                                    users = await config.client.get_reaction_users(reaction)
+                # Update the positions
+                pos = 1
 
-                            if users is not None:
-                                for user in users:
-                                    await config.client.remove_reaction(poll_msg, emoji + u'\u20E3', user)
+                for option in db_options:
+                    option.position = pos
+                    pos += 1
 
-                            await config.client.remove_reaction(poll_msg, emoji + u'\u20E3', config.client.user)
-                    elif lock:
-                        db_options[option - 1].locked = True
-                    elif unlock:
-                        db_options[option - 1].locked = False
+            elif lock or unlock:
+                for option in selected_options:
+                    num_options = len(db_options)
+
+                    # If it is a valid option
+                    if 0 < option <= num_options:
+                        if lock:
+                            db_options[option - 1].locked = True
+                        elif unlock:
+                            db_options[option - 1].locked = False
 
         # Option is not a number
         except ValueError:
@@ -469,7 +464,7 @@ async def edit_poll_command(command, db_channel):
     c = config.client.get_channel(db_channel.discord_id)
 
     try:
-        m = await config.client.get_message(c, poll.message_id)
+        m = await config.client.get_message(c, poll.discord_message_id)
 
         await config.client.edit_message(m, auxiliary.create_message(command.server, poll, db_options))
     except discord.errors.NotFound:
@@ -477,7 +472,7 @@ async def edit_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s created!' % poll.poll_id)
+    print('Poll %s created!' % poll.poll_key)
 
 
 async def close_poll_command(command, db_channel):
@@ -505,7 +500,7 @@ async def close_poll_command(command, db_channel):
         await auxiliary.send_temp_message(msg, command.channel)
         return
 
-    poll_id = params[1]
+    poll_key = params[1]
 
     # Split the selected options
     list_options = params[2].split(',')
@@ -519,23 +514,23 @@ async def close_poll_command(command, db_channel):
             selected_options.append(int(o))
 
         # Select the current poll
-        poll = config.session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
+        poll = config.session.query(models.Poll).filter(models.Poll.poll_key == poll_key).first()
 
         # Edit the message with the poll
         if poll is not None:
             # Only the author can close the poll
-            if poll.author == command.author.id:
+            if poll.discord_author_id == command.author.id:
                 options = config.session.query(models.Option).filter(models.Option.poll_id == poll.id) \
                                  .order_by(models.Option.position).all()
 
                 # Send a private message to all participants in the poll
                 await auxiliary.send_closed_poll_message(options, command.server, poll, command.channel)
 
-                await auxiliary.close_poll(command.server, poll, db_channel, options, selected_options)
+                await auxiliary.close_poll(command.server, poll, db_channel, selected_options)
 
                 config.session.commit()
 
-                print('Poll %s closed!' % poll.poll_id)
+                print('Poll %s closed!' % poll.poll_key)
         else:
             msg = 'There\'s no poll with that id for you to close.\nYour command: **%s**' % command.content
 
@@ -569,14 +564,10 @@ async def delete_poll_command(command, db_channel):
         await auxiliary.send_temp_message(msg, command.channel)
         return
 
-    poll_id = params[1]
+    poll_key = params[1]
 
     # Select the current poll
-    poll = config.session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
-
-    # Check if there's a closed poll with that id
-    if poll is None:
-        poll = config.session.query(models.ClosedPoll).filter(models.ClosedPoll.poll_id == poll_id).first()
+    poll = config.session.query(models.Poll).filter(models.Poll.poll_key == poll_key).first()
 
     # Delete the message with the poll
     if poll is not None:
@@ -588,7 +579,7 @@ async def delete_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s deleted!' % poll.poll_id)
+    print('Poll %s deleted!' % poll.poll_key)
 
 
 async def vote_poll_command(command, db_channel):
@@ -627,11 +618,11 @@ async def vote_poll_command(command, db_channel):
         author_id = command.author.id
         author_mention = command.author.mention
 
-    poll_id = params[1]
+    poll_key = params[1]
     options = params[2]
 
     # Select the current poll
-    poll = config.session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
+    poll = config.session.query(models.Poll).filter(models.Poll.poll_key == poll_key).first()
 
     # If no poll was found with that id
     if poll is None:
@@ -647,7 +638,7 @@ async def vote_poll_command(command, db_channel):
     # If it is an vote for an external user and it is not allowed
     if author_id is None and not poll.allow_external:
         msg = 'models.Poll *%s* does not allow for external votes.\n' \
-              'If you need this option, ask the poll author to edit it.' % poll_id
+              'If you need this option, ask the poll author to edit it.' % poll_key
 
         await auxiliary.send_temp_message(msg, command.channel)
         return
@@ -688,7 +679,7 @@ async def vote_poll_command(command, db_channel):
                 poll_edited = True
         else:
             msg = 'models.Poll *%s* does not allow for new votes.\n' \
-                  'If you need this option, ask the poll author to edit it.' % poll_id
+                  'If you need this option, ask the poll author to edit it.' % poll_key
 
             await auxiliary.send_temp_message(msg, command.channel)
             return
@@ -698,14 +689,14 @@ async def vote_poll_command(command, db_channel):
         c = config.client.get_channel(db_channel.discord_id)
 
         try:
-            m = await config.client.get_message(c, poll.message_id)
+            m = await config.client.get_message(c, poll.discord_message_id)
             await config.client.edit_message(m, auxiliary.create_message(command.server, poll, db_options))
         except discord.errors.NotFound:
             config.session.delete(poll)
 
     config.session.commit()
 
-    print('%s voted in %s!' % (author_mention, poll.poll_id))
+    print('%s voted in %s!' % (author_mention, poll.poll_key))
 
 
 async def unvote_poll_command(command, db_channel):
@@ -742,15 +733,15 @@ async def unvote_poll_command(command, db_channel):
 
         author_mention = command.author.mention
 
-    poll_id = params[1]
+    poll_key = params[1]
     options = params[2]
 
     # Select the current poll
-    poll = config.session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
+    poll = config.session.query(models.Poll).filter(models.Poll.poll_key == poll_key).first()
 
     # If no poll was found with that id
     if poll is None:
-        msg = 'There\'s no poll with that id for you to remove.\nYour command: **%s**' % command.content
+        msg = 'There\'s no poll with that id for you to unvote.\nYour command: **%s**' % command.content
 
         await auxiliary.send_temp_message(msg, command.channel)
         return
@@ -777,7 +768,7 @@ async def unvote_poll_command(command, db_channel):
             c = config.client.get_channel(db_channel.discord_id)
 
             try:
-                m = await config.client.get_message(c, poll.message_id)
+                m = await config.client.get_message(c, poll.discord_message_id)
 
                 await config.client.edit_message(m, auxiliary.create_message(command.server, poll, db_options))
             except discord.errors.NotFound:
@@ -785,7 +776,7 @@ async def unvote_poll_command(command, db_channel):
 
             config.session.commit()
 
-            print('%s removed vote from %s!' % (author_mention, poll.poll_id))
+            print('%s removed vote from %s!' % (author_mention, poll.poll_key))
 
     # Option is not a number
     except ValueError:
@@ -817,14 +808,10 @@ async def refresh_poll_command(command, db_channel):
         await auxiliary.send_temp_message(msg, command.channel)
         return
 
-    poll_id = params[1]
+    poll_key = params[1]
 
     # Select the current poll
-    poll = config.session.query(models.Poll).filter(models.Poll.poll_id == poll_id).first()
-
-    # Check if there's a closed poll with that id
-    if poll is None:
-        poll = config.session.query(models.ClosedPoll).filter(models.ClosedPoll.poll_id == poll_id).first()
+    poll = config.session.query(models.Poll).filter(models.Poll.poll_key == poll_key).first()
 
     # Create the message with the poll
     # and delete the previous message
@@ -840,21 +827,22 @@ async def help_message_command(command, db_channel):
     :param db_channel: the corresponding channel entry in the DB.
     """
 
-    # The id of the Discord channel where the message was sent
-    channel_id = command.channel.id
+    # The ids of the Discord channel and server where the message was sent
+    discord_channel_id = command.channel.id
+    discord_server_id = command.server.id
 
     # Create channel if it doesn't already exist
     if db_channel is None:
-        db_channel = models.Channel(channel_id)
+        db_channel = models.Channel(discord_channel_id, discord_server_id)
 
         config.session.add(db_channel)
         config.session.commit()
 
-    msg = 'models.Poll Me Bot Help\n' \
+    msg = 'Poll Me Bot Help\n' \
           '----------------\n' \
-          'Creating a poll: *!poll poll_id "Question" "Option 1" "Option 2"*\n' \
-          'Voting: *!vote poll_id list_of_numbers_separated_by_comma*\n' \
-          'Removing votes: *!unvote poll_id list_of_numbers_separated_by_comma*\n' \
+          'Creating a poll: *!poll poll_key "Question" "Option 1" "Option 2"*\n' \
+          'Voting: *!vote poll_key list_of_numbers_separated_by_comma*\n' \
+          'Removing votes: *!unvote poll_key list_of_numbers_separated_by_comma*\n' \
           '(More options and details are available at https://github.com/correia55/models.PollMeBot)\n' \
           '(This message will self-destruct in 30 seconds.)'
 

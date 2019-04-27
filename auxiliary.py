@@ -34,35 +34,25 @@ def parse_command_parameters(command):
     return params
 
 
-def create_message(server, poll, options, selected_options=None):
+def create_message(server, poll, options):
     """
     Creates a message given a poll.
 
     :param server: the server where the poll was created.
     :param poll: the poll.
     :param options: the options available in the poll.
-    :param selected_options: the list of options that are to be displayed in the closed poll.
     :return: the message that represents the poll.
     """
 
-    # If it is a closed poll just return the message
-    if isinstance(poll, models.ClosedPoll):
-        return poll.message
+    m = server.get_member(poll.discord_author_id)
 
-    m = server.get_member(poll.author)
+    msg = '**%s** (poll_key: %s) (author: %s)' % (poll.question, poll.poll_key, m.mention)
 
-    msg = '**%s** (poll_id: %s) (author: %s)' % (poll.question, poll.poll_id, m.mention)
-
-    if selected_options is not None:
+    if poll.closed:
         msg += ' (Closed)'
 
     for i in range(len(options)):
-        # Ignore the options not selected
-        if selected_options is not None:
-            if i + 1 not in selected_options:
-                continue
-
-        msg += '\n%d - %s' % ((i + 1), options[i].option)
+        msg += '\n%d - %s' % ((i + 1), options[i].option_text)
 
         # Get all votes for that option
         votes = config.session.query(models.Vote).filter(models.Vote.option_id == options[i].id).all()
@@ -78,12 +68,12 @@ def create_message(server, poll, options, selected_options=None):
                 msg += ' ->'
 
                 for v in votes:
-                    msg += ' %s' % v.participant_mention
+                    msg += ' %s' % v.discord_participant_mention
 
         if options[i].locked:
             msg += ' (locked)'
 
-    if selected_options is None:
+    if not poll.closed:
         if poll.new_options:
             msg += '\n(New options allowed!)'
 
@@ -111,21 +101,20 @@ def remove_prev_vote(options, participant):
 
     # Get the previous vote
     prev_vote = config.session.query(models.Vote).filter(models.Vote.option_id.in_(ids)) \
-                       .filter(models.Vote.participant_mention == participant).first()
+                       .filter(models.Vote.discord_participant_mention == participant).first()
 
     # If it had voted for something else remove it
     if prev_vote is not None:
         config.session.delete(prev_vote)
 
 
-async def close_poll(server, poll, db_channel, options, selected_options):
+async def close_poll(server, db_poll, db_channel, selected_options):
     """
     Close a poll from the DB and update the message.
 
     :param server: the server where the poll was created.
-    :param poll: the poll to close.
+    :param db_poll: the poll to close.
     :param db_channel: the corresponding channel entry in the DB.
-    :param options: the list of options available in the poll.
     :param selected_options: the list of options that are to be displayed in the closed poll.
     """
 
@@ -133,21 +122,32 @@ async def close_poll(server, poll, db_channel, options, selected_options):
     c = config.client.get_channel(db_channel.discord_id)
 
     try:
-        m = await config.client.get_message(c, poll.message_id)
+        m = await config.client.get_message(c, db_poll.discord_message_id)
 
-        new_msg = create_message(server, poll, options, selected_options=selected_options)
+        non_selected_options = config.session.query(models.Option).filter(models.Option.poll_id == db_poll.id)\
+                                      .filter(~models.Option.position.in_(selected_options)).all()
+
+        # Delete all non selected options
+        for option in non_selected_options:
+            config.session.delete(option)
+
+        config.session.flush()
+
+        # Update options list
+        options = config.session.query(models.Option).filter(models.Option.poll_id == db_poll.id) \
+                         .order_by(models.Option.position).all()
+
+        db_poll.closed = True
+        db_poll.closed_date = datetime.date.today()
+
+        new_msg = create_message(server, db_poll, options)
 
         await config.client.edit_message(m, new_msg)
 
         await config.client.clear_reactions(m)
-
-        config.session.add(models.ClosedPoll(poll.poll_id, poll.author, new_msg, poll.message_id, poll.channel_id,
-                                      poll.discord_server_id, datetime.date.today()))
     except discord.errors.NotFound:
         pass
 
-    # Delete the poll from the DB
-    config.session.delete(poll)
     config.session.flush()
 
 
@@ -161,11 +161,11 @@ async def delete_poll(poll, db_channel, command_author):
     """
 
     # Only the author can delete the poll
-    if command_author is None or poll.author == command_author:
+    if command_author is None or poll.discord_author_id == command_author:
         c = config.client.get_channel(db_channel.discord_id)
 
         try:
-            m = await config.client.get_message(c, poll.message_id)
+            m = await config.client.get_message(c, poll.discord_message_id)
 
             await config.client.delete_message(m)
         except discord.errors.NotFound:
@@ -203,7 +203,7 @@ async def check_messages_exist():
         c = config.client.get_channel(channel.discord_id)
 
         try:
-            await config.client.get_message(c, poll.message_id)
+            await config.client.get_message(c, poll.discord_message_id)
         except discord.errors.NotFound:
             config.session.delete(poll)
 
@@ -217,13 +217,13 @@ async def delete_old_closed_polls():
     :return:
     """
 
-    polls = config.session.query(models.ClosedPoll).all()
+    polls = config.session.query(models.Poll).filter(models.Poll.closed).all()
 
     today = datetime.date.today()
 
     # Delete all polls that no longer exist
     for poll in polls:
-        if (today - poll.date).days > config.OLDEST_CLOSED_POLL_DAYS:
+        if (today - poll.closed_date).days > config.OLDEST_CLOSED_POLL_DAYS:
             channel = config.session.query(models.Channel).filter(models.Channel.id == poll.channel_id).first()
             await delete_poll(poll, channel, None)
 
@@ -269,32 +269,32 @@ async def send_closed_poll_message(options, server, db_poll, channel):
 
     # Get all the votes with different participants from this poll
     votes = config.session.query(models.Vote).filter(models.Vote.option_id.in_(ids)) \
-                   .distinct(models.Vote.participant_id).all()
+                   .distinct(models.Vote.discord_participant_id).all()
 
     # Send a private message to each member that voted
     for v in votes:
         # If it's not an external user
-        if v.participant_id is not None:
-            m = server.get_member(v.participant_id)
+        if v.discord_participant_id is not None:
+            m = server.get_member(v.discord_participant_id)
 
             # If it found the user
             if m is not None:
                 # Don't send message to the author
-                if v.participant_id != db_poll.author:
+                if v.discord_participant_id != db_poll.discord_author_id:
                     try:
                         await config.client.send_message(m, 'models.Poll %s was closed, check the results in %s!'
-                                                  % (db_poll.poll_id, channel.mention))
+                                                  % (db_poll.poll_key, channel.mention))
                     except discord.errors.Forbidden:
                         pass
 
 
-def add_vote(option, participant_id, participant_mention, db_options, multiple_options):
+def add_vote(option, discord_participant_id, discord_participant_mention, db_options, multiple_options):
     """
     Add a vote.
 
     :param option: the voted option.
-    :param participant_id: the id of the participant whose vote is to add.
-    :param participant_mention: the mention of the participant whose vote is to add.
+    :param discord_participant_id: the id of the participant whose vote is to add.
+    :param discord_participant_mention: the mention of the participant whose vote is to add.
     :param db_options: the existing options in the db.
     :param multiple_options: if multiple options are allowed in this poll.
     """
@@ -308,12 +308,12 @@ def add_vote(option, participant_id, participant_mention, db_options, multiple_o
 
         vote = config.session.query(models.Vote) \
             .filter(models.Vote.option_id == db_options[option - 1].id) \
-            .filter(models.Vote.participant_mention == participant_mention).first()
+            .filter(models.Vote.discord_participant_mention == discord_participant_mention).first()
 
         # Vote for an option if multiple options are allowed and he is yet to vote this option
         if multiple_options and vote is None:
             # Add the new vote
-            vote = models.Vote(db_options[option - 1].id, participant_id, participant_mention)
+            vote = models.Vote(db_options[option - 1].id, discord_participant_id, discord_participant_mention)
             config.session.add(vote)
 
             new_vote = True
@@ -322,10 +322,10 @@ def add_vote(option, participant_id, participant_mention, db_options, multiple_o
         elif not multiple_options:
             # The participant didn't vote this option
             if vote is None:
-                remove_prev_vote(db_options, participant_mention)
+                remove_prev_vote(db_options, discord_participant_mention)
 
                 # Add the new vote
-                vote = models.Vote(db_options[option - 1].id, participant_id, participant_mention)
+                vote = models.Vote(db_options[option - 1].id, discord_participant_id, discord_participant_mention)
                 config.session.add(vote)
 
                 new_vote = True
@@ -333,12 +333,12 @@ def add_vote(option, participant_id, participant_mention, db_options, multiple_o
     return new_vote
 
 
-def remove_vote(option, participant_id, db_options):
+def remove_vote(option, discord_participant_mention, db_options):
     """
     Remove a vote.
 
-    :param option: the option to be removed.
-    :param participant_id: the id of the participant whose vote is to remove.
+    :param option: the option to remove.
+    :param discord_participant_mention: the discord mention of the participant whose vote is to remove.
     :param db_options: the existing options in the db.
     """
 
@@ -351,7 +351,7 @@ def remove_vote(option, participant_id, db_options):
 
         vote = config.session.query(models.Vote) \
             .filter(models.Vote.option_id == db_options[option - 1].id) \
-            .filter(models.Vote.participant_id == participant_id).first()
+            .filter(models.Vote.discord_participant_mention == discord_participant_mention).first()
 
         if vote is not None:
             # Remove the vote from this option
@@ -366,6 +366,7 @@ def date_given_day(date, day):
     """
     Return the date corresponding to a day.
 
+    :param date: the date.
     :param day: the day.
     """
 
@@ -398,7 +399,7 @@ async def refresh_poll(poll, channel_discord_id, discord_server):
 
     # Delete this message
     try:
-        m = await config.client.get_message(c, poll.message_id)
+        m = await config.client.get_message(c, poll.discord_message_id)
 
         await config.client.delete_message(m)
     except discord.errors.NotFound:
@@ -408,11 +409,11 @@ async def refresh_poll(poll, channel_discord_id, discord_server):
         .order_by(models.Option.position).all()
 
     msg = await config.client.send_message(c, create_message(discord_server, poll, options))
-    poll.message_id = msg.id
+    poll.discord_message_id = msg.id
 
     config.session.commit()
 
-    print('Poll %s refreshed!' % poll.poll_id)
+    print('Poll %s refreshed!' % poll.poll_key)
 
     # Add a reaction for each option, with 9 being the max number of reactions
     emoji = u'\u0031'
@@ -427,8 +428,6 @@ async def refresh_all_polls():
 
     polls = config.session.query(models.Poll).all()
 
-    polls += config.session.query(models.ClosedPoll).all()
-
     for p in polls:
         db_channel = config.session.query(models.Channel).filter(models.Channel.id == p.channel_id).first()
         s = config.client.get_server(p.discord_server_id)
@@ -436,4 +435,28 @@ async def refresh_all_polls():
         if db_channel is not None and s is not None:
             await refresh_poll(p, db_channel.discord_id, s)
 
+    config.session.flush()
+
     print('Refreshing all polls...Done')
+
+
+async def remove_reaction(discord_poll_msg, emoji):
+    """
+    Remove reaction from a poll message.
+
+    :param discord_poll_msg: the message from which the reactions are to be removed.
+    :param emoji: the emoji corresponding to the reaction being removed.
+    """
+
+    users = None
+
+    # Get all users with that reaction
+    for reaction in discord_poll_msg.reactions:
+        if reaction.emoji == (emoji + u'\u20E3'):
+            users = await config.client.get_reaction_users(reaction)
+
+    if users is not None:
+        for user in users:
+            await config.client.remove_reaction(discord_poll_msg, emoji + u'\u20E3', user)
+
+    await config.client.remove_reaction(discord_poll_msg, emoji + u'\u20E3', config.client.user)
