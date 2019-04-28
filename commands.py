@@ -602,11 +602,10 @@ async def vote_poll_command(command, db_channel):
 
     # Check for external voters
     if params.__contains__('-e') and len(params) == 5:
-        author_id = None
-        author_mention = params[4]
+        author_id = params[4]
 
-        if author_mention[0] != '"':
-            author_mention = '"%s"' % author_mention
+        if author_id[0] != '"':
+            author_id = '"%s"' % author_id
     else:
         # If the command has an invalid number of parameters
         if len(params) != 3:
@@ -616,7 +615,6 @@ async def vote_poll_command(command, db_channel):
             return
 
         author_id = command.author.id
-        author_mention = command.author.mention
 
     poll_key = params[1]
     options = params[2]
@@ -654,13 +652,13 @@ async def vote_poll_command(command, db_channel):
             selected_options.append(int(o))
 
         for option in selected_options:
-            poll_edited |= auxiliary.add_vote(option, author_id, author_mention, db_options, poll.multiple_options)
+            poll_edited |= auxiliary.add_vote(option, author_id, db_options, poll.multiple_options)
 
     # Option is not a list of numbers
     except ValueError:
         if poll.new_options:
             if not poll.multiple_options:
-                auxiliary.remove_prev_vote(db_options, author_mention)
+                auxiliary.remove_prev_vote(db_options, author_id)
 
             if options[0] == '"' and options[-1] == '"':
                 # Remove quotation marks
@@ -673,7 +671,7 @@ async def vote_poll_command(command, db_channel):
 
                 config.session.flush()
 
-                vote = models.Vote(options.id, author_id, author_mention)
+                vote = models.Vote(options.id, author_id)
                 config.session.add(vote)
 
                 poll_edited = True
@@ -696,7 +694,7 @@ async def vote_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('%s voted in %s!' % (author_mention, poll.poll_key))
+    print('%s voted in %s!' % (author_id, poll.poll_key))
 
 
 async def unvote_poll_command(command, db_channel):
@@ -719,10 +717,10 @@ async def unvote_poll_command(command, db_channel):
 
     # Check for external voters
     if params.__contains__('-e') and len(params) == 5:
-        author_mention = params[4]
+        author_id = params[4]
 
-        if author_mention[0] != '"':
-            author_mention = '"%s"' % author_mention
+        if author_id[0] != '"':
+            author_id = '"%s"' % author_id
     else:
         # If the command has an invalid number of parameters
         if len(params) != 3:
@@ -731,7 +729,7 @@ async def unvote_poll_command(command, db_channel):
             await auxiliary.send_temp_message(msg, command.channel)
             return
 
-        author_mention = command.author.mention
+        author_id = command.author.id
 
     poll_key = params[1]
     options = params[2]
@@ -761,7 +759,7 @@ async def unvote_poll_command(command, db_channel):
             selected_options.append(int(o))
 
         for option in selected_options:
-            poll_edited |= auxiliary.remove_vote(option, author_mention, db_options)
+            poll_edited |= auxiliary.remove_vote(option, author_id, db_options)
 
         if poll_edited:
             # Edit the message
@@ -776,7 +774,7 @@ async def unvote_poll_command(command, db_channel):
 
             config.session.commit()
 
-            print('%s removed vote from %s!' % (author_mention, poll.poll_key))
+            print('<@%s> removed vote from %s!' % (author_id, poll.poll_key))
 
     # Option is not a number
     except ValueError:

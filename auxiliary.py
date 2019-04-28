@@ -44,9 +44,7 @@ def create_message(server, poll, options):
     :return: the message that represents the poll.
     """
 
-    m = server.get_member(poll.discord_author_id)
-
-    msg = '**%s** (poll_key: %s) (author: %s)' % (poll.question, poll.poll_key, m.mention)
+    msg = '**%s** (poll_key: %s) (author: <@%s>)' % (poll.question, poll.poll_key, poll.discord_author_id)
 
     if poll.closed:
         msg += ' (Closed)'
@@ -68,7 +66,10 @@ def create_message(server, poll, options):
                 msg += ' ->'
 
                 for v in votes:
-                    msg += ' %s' % v.discord_participant_mention
+                    if v.discord_participant_id[0] == '"':
+                        msg += ' %s' % v.discord_participant_id
+                    else:
+                        msg += ' <@%s>' % v.discord_participant_id
 
         if options[i].locked:
             msg += ' (locked)'
@@ -86,12 +87,12 @@ def create_message(server, poll, options):
     return msg
 
 
-def remove_prev_vote(options, participant):
+def remove_prev_vote(options, discord_participant_id):
     """
     Remove the previous vote of a participant.
 
     :param options: the options available in the poll.
-    :param participant: the id of the participant whose vote is to remove.
+    :param discord_participant_id: the id of the participant whose vote is to remove.
     """
 
     ids = []
@@ -101,7 +102,7 @@ def remove_prev_vote(options, participant):
 
     # Get the previous vote
     prev_vote = config.session.query(models.Vote).filter(models.Vote.option_id.in_(ids)) \
-                       .filter(models.Vote.discord_participant_mention == participant).first()
+                      .filter(models.Vote.discord_participant_id == discord_participant_id).first()
 
     # If it had voted for something else remove it
     if prev_vote is not None:
@@ -288,13 +289,12 @@ async def send_closed_poll_message(options, server, db_poll, channel):
                         pass
 
 
-def add_vote(option, discord_participant_id, discord_participant_mention, db_options, multiple_options):
+def add_vote(option, discord_participant_id, db_options, multiple_options):
     """
     Add a vote.
 
     :param option: the voted option.
     :param discord_participant_id: the id of the participant whose vote is to add.
-    :param discord_participant_mention: the mention of the participant whose vote is to add.
     :param db_options: the existing options in the db.
     :param multiple_options: if multiple options are allowed in this poll.
     """
@@ -307,13 +307,13 @@ def add_vote(option, discord_participant_id, discord_participant_mention, db_opt
             return False
 
         vote = config.session.query(models.Vote) \
-            .filter(models.Vote.option_id == db_options[option - 1].id) \
-            .filter(models.Vote.discord_participant_mention == discord_participant_mention).first()
+                     .filter(models.Vote.option_id == db_options[option - 1].id) \
+                     .filter(models.Vote.discord_participant_id == discord_participant_id).first()
 
         # Vote for an option if multiple options are allowed and he is yet to vote this option
         if multiple_options and vote is None:
             # Add the new vote
-            vote = models.Vote(db_options[option - 1].id, discord_participant_id, discord_participant_mention)
+            vote = models.Vote(db_options[option - 1].id, discord_participant_id)
             config.session.add(vote)
 
             new_vote = True
@@ -322,10 +322,10 @@ def add_vote(option, discord_participant_id, discord_participant_mention, db_opt
         elif not multiple_options:
             # The participant didn't vote this option
             if vote is None:
-                remove_prev_vote(db_options, discord_participant_mention)
+                remove_prev_vote(db_options, discord_participant_id)
 
                 # Add the new vote
-                vote = models.Vote(db_options[option - 1].id, discord_participant_id, discord_participant_mention)
+                vote = models.Vote(db_options[option - 1].id, discord_participant_id)
                 config.session.add(vote)
 
                 new_vote = True
@@ -333,12 +333,12 @@ def add_vote(option, discord_participant_id, discord_participant_mention, db_opt
     return new_vote
 
 
-def remove_vote(option, discord_participant_mention, db_options):
+def remove_vote(option, discord_participant_id, db_options):
     """
     Remove a vote.
 
     :param option: the option to remove.
-    :param discord_participant_mention: the discord mention of the participant whose vote is to remove.
+    :param discord_participant_id: the discord id of the participant whose vote is to remove.
     :param db_options: the existing options in the db.
     """
 
@@ -351,7 +351,7 @@ def remove_vote(option, discord_participant_mention, db_options):
 
         vote = config.session.query(models.Vote) \
             .filter(models.Vote.option_id == db_options[option - 1].id) \
-            .filter(models.Vote.discord_participant_mention == discord_participant_mention).first()
+            .filter(models.Vote.discord_participant_id == discord_participant_id).first()
 
         if vote is not None:
             # Remove the vote from this option

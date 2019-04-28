@@ -91,11 +91,9 @@ class Vote(base):
     vote_datetime = Column(DateTime, default=datetime.datetime.utcnow)
 
     discord_participant_id = Column(String)
-    discord_participant_mention = Column(String)
 
     option_id = Column(Integer, ForeignKey('Option.id'))
 
-    def __init__(self, option_id, discord_participant_id, discord_participant_mention):
+    def __init__(self, option_id, discord_participant_id):
         self.option_id = option_id
         self.discord_participant_id = discord_participant_id
-        self.discord_participant_mention = discord_participant_mention
