@@ -162,6 +162,17 @@ Removing a reaction to the number of an option also removes that user's vote.
 
 *!unvote party2night 1 -e "My friend not on the server"*
 
+### Mention Message
+
+```
+!poll_mention poll_key poll_option desired_message
+```
+
+Create a message that mentions all the participants that voted the poll_option on the poll identified by the poll_key, with the desired message.
+
+#### Examples
+*!poll_mention party2night 1 "Wanna checkout that new bar?"*
+
 ### Help Poll
 
 ```
