@@ -192,7 +192,7 @@ async def create_poll_command(command, db_channel):
         if m != config.client.user and m.id != new_poll.discord_author_id:
             try:
                 await config.client.send_message(m, 'A new poll (%s) has been created in %s!'
-                                          % (new_poll.poll_key, command.channel.mention))
+                                                 % (new_poll.poll_key, command.channel.mention))
             except discord.errors.Forbidden:
                 pass
 
@@ -252,7 +252,7 @@ async def create_poll_command(command, db_channel):
     config.session.add_all(options)
 
     # Create the message with the poll
-    msg = await config.client.send_message(command.channel, auxiliary.create_message(command.server, new_poll, options))
+    msg = await config.client.send_message(command.channel, auxiliary.create_message(new_poll, options))
 
     new_poll.discord_message_id = msg.id
 
@@ -338,7 +338,7 @@ async def edit_poll_command(command, db_channel):
 
     # If the command has an invalid number of parameters
     if (len(poll_params) < 2 and (add or remove or lock or unlock)) or \
-        (len(poll_params) < 1 and not add and not remove and not lock and not unlock):
+            (len(poll_params) < 1 and not add and not remove and not lock and not unlock):
         msg = 'Invalid parameters in command: **%s**' % command.content
 
         await auxiliary.send_temp_message(msg, command.channel)
@@ -466,7 +466,7 @@ async def edit_poll_command(command, db_channel):
     try:
         m = await config.client.get_message(c, poll.discord_message_id)
 
-        await config.client.edit_message(m, auxiliary.create_message(command.server, poll, db_options))
+        await config.client.edit_message(m, auxiliary.create_message(poll, db_options))
     except discord.errors.NotFound:
         config.session.delete(poll)
 
@@ -526,7 +526,7 @@ async def close_poll_command(command, db_channel):
                 # Send a private message to all participants in the poll
                 await auxiliary.send_closed_poll_message(options, command.server, poll, command.channel)
 
-                await auxiliary.close_poll(command.server, poll, db_channel, selected_options)
+                await auxiliary.close_poll(poll, db_channel, selected_options)
 
                 config.session.commit()
 
@@ -688,7 +688,7 @@ async def vote_poll_command(command, db_channel):
 
         try:
             m = await config.client.get_message(c, poll.discord_message_id)
-            await config.client.edit_message(m, auxiliary.create_message(command.server, poll, db_options))
+            await config.client.edit_message(m, auxiliary.create_message(poll, db_options))
         except discord.errors.NotFound:
             config.session.delete(poll)
 
@@ -768,7 +768,7 @@ async def unvote_poll_command(command, db_channel):
             try:
                 m = await config.client.get_message(c, poll.discord_message_id)
 
-                await config.client.edit_message(m, auxiliary.create_message(command.server, poll, db_options))
+                await config.client.edit_message(m, auxiliary.create_message(poll, db_options))
             except discord.errors.NotFound:
                 config.session.delete(poll)
 
@@ -814,7 +814,51 @@ async def refresh_poll_command(command, db_channel):
     # Create the message with the poll
     # and delete the previous message
     if poll is not None:
-        await auxiliary.refresh_poll(poll, db_channel.discord_id, command.server)
+        await auxiliary.refresh_poll(poll, db_channel.discord_id)
+
+
+async def poll_mention_message_command(command, db_channel):
+    """
+    Create a message mentioning the voters of a given option.
+
+    :param command: the command used.
+    :param db_channel: the corresponding channel entry in the DB.
+    """
+
+    # If the channel does not exist in the DB
+    if db_channel is None:
+        db_channel = models.Channel(command.channel.id, command.server.id)
+
+        config.session.add(db_channel)
+        config.session.commit()
+
+    # Get the list of parameters in the message
+    params = auxiliary.parse_command_parameters(command.content)
+
+    # If the command has an invalid number of parameters
+    if len(params) != 4:
+        msg = 'Invalid parameters in command: **%s**' % command.content
+
+        await auxiliary.send_temp_message(msg, command.channel)
+        return
+
+    poll_key = params[1]
+    message = params[3]
+
+    try:
+        poll_option = int(params[2])
+
+        # Select the current poll
+        poll = config.session.query(models.Poll).filter(models.Poll.poll_key == poll_key,
+                                                        models.Poll.discord_server_id == command.server.id).first()
+
+        if poll is not None:
+            msg = auxiliary.create_poll_mention_message(poll_option, message, poll.id, command.author.id)
+
+            if msg is not None:
+                await config.client.send_message(command.channel, msg)
+    except ValueError:
+        pass
 
 
 async def help_message_command(command, db_channel):

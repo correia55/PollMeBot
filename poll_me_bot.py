@@ -49,6 +49,8 @@ async def on_message(message):
         await commands.delete_poll_command(message, db_channel)
     elif message.content.startswith('!poll_refresh '):
         await commands.refresh_poll_command(message, db_channel)
+    elif message.content.startswith('!poll_mention '):
+        await commands.poll_mention_message_command(message, db_channel)
     elif message.content.startswith('!poll '):
         await commands.create_poll_command(message, db_channel)
     elif message.content.startswith('!vote '):
@@ -108,7 +110,7 @@ async def on_reaction_add(reaction, user):
 
         try:
             m = await config.client.get_message(c, poll.discord_message_id)
-            await config.client.edit_message(m, auxiliary.create_message(reaction.message.server, poll, db_options))
+            await config.client.edit_message(m, auxiliary.create_message(poll, db_options))
         except discord.errors.NotFound:
             config.session.delete(poll)
 
@@ -152,7 +154,7 @@ async def on_reaction_remove(reaction, user):
 
         try:
             m = await config.client.get_message(c, poll.discord_message_id)
-            await config.client.edit_message(m, auxiliary.create_message(reaction.message.server, poll, db_options))
+            await config.client.edit_message(m, auxiliary.create_message(poll, db_options))
         except discord.errors.NotFound:
             config.session.delete(poll)
 

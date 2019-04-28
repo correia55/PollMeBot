@@ -34,11 +34,10 @@ def parse_command_parameters(command):
     return params
 
 
-def create_message(server, poll, options):
+def create_message(poll, options):
     """
     Creates a message given a poll.
 
-    :param server: the server where the poll was created.
     :param poll: the poll.
     :param options: the options available in the poll.
     :return: the message that represents the poll.
@@ -109,11 +108,10 @@ def remove_prev_vote(options, discord_participant_id):
         config.session.delete(prev_vote)
 
 
-async def close_poll(server, db_poll, db_channel, selected_options):
+async def close_poll(db_poll, db_channel, selected_options):
     """
     Close a poll from the DB and update the message.
 
-    :param server: the server where the poll was created.
     :param db_poll: the poll to close.
     :param db_channel: the corresponding channel entry in the DB.
     :param selected_options: the list of options that are to be displayed in the closed poll.
@@ -126,7 +124,7 @@ async def close_poll(server, db_poll, db_channel, selected_options):
         m = await config.client.get_message(c, db_poll.discord_message_id)
 
         non_selected_options = config.session.query(models.Option).filter(models.Option.poll_id == db_poll.id)\
-                                      .filter(~models.Option.position.in_(selected_options)).all()
+                                     .filter(~models.Option.position.in_(selected_options)).all()
 
         # Delete all non selected options
         for option in non_selected_options:
@@ -136,12 +134,12 @@ async def close_poll(server, db_poll, db_channel, selected_options):
 
         # Update options list
         options = config.session.query(models.Option).filter(models.Option.poll_id == db_poll.id) \
-                         .order_by(models.Option.position).all()
+                        .order_by(models.Option.position).all()
 
         db_poll.closed = True
         db_poll.closed_date = datetime.date.today()
 
-        new_msg = create_message(server, db_poll, options)
+        new_msg = create_message(db_poll, options)
 
         await config.client.edit_message(m, new_msg)
 
@@ -270,7 +268,7 @@ async def send_closed_poll_message(options, server, db_poll, channel):
 
     # Get all the votes with different participants from this poll
     votes = config.session.query(models.Vote).filter(models.Vote.option_id.in_(ids)) \
-                   .distinct(models.Vote.discord_participant_id).all()
+                  .distinct(models.Vote.discord_participant_id).all()
 
     # Send a private message to each member that voted
     for v in votes:
@@ -284,7 +282,7 @@ async def send_closed_poll_message(options, server, db_poll, channel):
                 if v.discord_participant_id != db_poll.discord_author_id:
                     try:
                         await config.client.send_message(m, 'models.Poll %s was closed, check the results in %s!'
-                                                  % (db_poll.poll_key, channel.mention))
+                                                         % (db_poll.poll_key, channel.mention))
                     except discord.errors.Forbidden:
                         pass
 
@@ -386,13 +384,12 @@ def date_given_day(date, day):
     return date
 
 
-async def refresh_poll(poll, channel_discord_id, discord_server):
+async def refresh_poll(poll, channel_discord_id):
     """
     Refresh a poll, deleting the current message and creating a new one.
 
     :param poll: the poll being refreshed.
     :param channel_discord_id: the id of the discord channel.
-    :param discord_server: the discord server where the channel belongs.
     """
 
     c = config.client.get_channel(channel_discord_id)
@@ -408,7 +405,7 @@ async def refresh_poll(poll, channel_discord_id, discord_server):
     options = config.session.query(models.Option).filter(models.Option.poll_id == poll.id) \
         .order_by(models.Option.position).all()
 
-    msg = await config.client.send_message(c, create_message(discord_server, poll, options))
+    msg = await config.client.send_message(c, create_message(poll, options))
     poll.discord_message_id = msg.id
 
     config.session.commit()
@@ -430,10 +427,9 @@ async def refresh_all_polls():
 
     for p in polls:
         db_channel = config.session.query(models.Channel).filter(models.Channel.id == p.channel_id).first()
-        s = config.client.get_server(p.discord_server_id)
 
-        if db_channel is not None and s is not None:
-            await refresh_poll(p, db_channel.discord_id, s)
+        if db_channel is not None:
+            await refresh_poll(p, db_channel.discord_id)
 
     config.session.flush()
 
@@ -460,3 +456,39 @@ async def remove_reaction(discord_poll_msg, emoji):
             await config.client.remove_reaction(discord_poll_msg, emoji + u'\u20E3', user)
 
     await config.client.remove_reaction(discord_poll_msg, emoji + u'\u20E3', config.client.user)
+
+
+def create_poll_mention_message(poll_option, message, db_poll_id, discord_author_id):
+    """
+    Create a message mentioning all participants that voted on a specific option of a specific poll.
+
+    :param poll_option: the selected option.
+    :param message: the desired message.
+    :param db_poll_id: the id of the poll in the DB.
+    :param discord_author_id: the discord id of the author of the command.
+    """
+
+    option = config.session.query(models.Option).filter(models.Option.poll_id == db_poll_id,
+                                                        models.Option.position == poll_option).first()
+
+    # If no option was found
+    if option is None:
+        return None
+
+    # Get all the votes for the selected option
+    votes = config.session.query(models.Vote).filter(models.Vote.option_id == option.id).all()
+
+    if len(votes) == 0:
+        return None
+
+    msg = '<@%s> would like to tell ' % discord_author_id
+
+    # Send a private message to each member that voted
+    for v in votes:
+        # If it's not an external user
+        if v.discord_participant_id[0] != '"':
+            msg += ' <@%s>' % v.discord_participant_id
+
+    msg += ': %s.' % message
+
+    return msg
