@@ -49,7 +49,7 @@ def create_message(poll, options):
         msg += ' (Closed)'
 
     for i in range(len(options)):
-        msg += '\n%d - %s' % ((i + 1), options[i].option_text)
+        msg += '\n%d - %s' % (options[i].position, options[i].option_text)
 
         # Get all votes for that option
         votes = config.session.query(models.Vote).filter(models.Vote.option_id == options[i].id).all()
@@ -412,12 +412,13 @@ async def refresh_poll(poll, channel_discord_id):
 
     print('Poll %s refreshed!' % poll.poll_key)
 
-    # Add a reaction for each option, with 9 being the max number of reactions
-    emoji = u'\u0031'
+    if not poll.closed:
+        # Add a reaction for each option, with 9 being the max number of reactions
+        emoji = u'\u0031'
 
-    for i in range(min(len(options), 9)):
-        await config.client.add_reaction(msg, emoji + u'\u20E3')
-        emoji = chr(ord(emoji) + 1)
+        for i in range(min(len(options), 9)):
+            await config.client.add_reaction(msg, emoji + u'\u20E3')
+            emoji = chr(ord(emoji) + 1)
 
 
 async def refresh_all_polls():
@@ -476,7 +477,8 @@ def create_poll_mention_message(poll_option, message, db_poll_id, discord_author
         return None
 
     # Get all the votes for the selected option
-    votes = config.session.query(models.Vote).filter(models.Vote.option_id == option.id).all()
+    votes = config.session.query(models.Vote).filter(models.Vote.option_id == option.id,
+                                                     models.Vote.discord_participant_id != discord_author_id).all()
 
     if len(votes) == 0:
         return None
