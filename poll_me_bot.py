@@ -116,7 +116,7 @@ async def on_reaction_add(reaction, user):
 
         config.session.commit()
 
-        print('%s reacted in %s!' % (user.id, poll.poll_key))
+        print('%s reacted with %d in %s!' % (user.id, option, poll.poll_key))
 
 
 # When a reaction is removed in Discord
@@ -160,7 +160,7 @@ async def on_reaction_remove(reaction, user):
 
         config.session.commit()
 
-        print('%s removed reaction from %s!' % (user.id, poll.poll_key))
+        print('%s removed reaction %d from %s!' % (user.id, option, poll.poll_key))
 
 # Run the bot
 config.client.run(config.token)

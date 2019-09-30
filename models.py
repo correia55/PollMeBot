@@ -26,6 +26,12 @@ class Channel(base):
         self.delete_commands = delete_commands
         self.delete_all = delete_all
 
+    def __str__(self) -> str:
+        # Copied from: https://www.quora.com/What-is-the-use-of-__str__-in-python
+        # Override to print a readable string presentation of your object
+        # below is a dynamic way of doing this without explicity constructing the string manually
+        return ', '.join(['{key}={value}'.format(key=key, value=self.__dict__.get(key)) for key in self.__dict__])
+
 
 class Poll(base):
     __tablename__ = 'Poll'
@@ -64,6 +70,12 @@ class Poll(base):
         self.discord_server_id = discord_server_id
         self.closed = False
 
+    def __str__(self) -> str:
+        # Copied from: https://www.quora.com/What-is-the-use-of-__str__-in-python
+        # Override to print a readable string presentation of your object
+        # below is a dynamic way of doing this without explicity constructing the string manually
+        return ', '.join(['{key}={value}'.format(key=key, value=self.__dict__.get(key)) for key in self.__dict__])
+
 
 class Option(base):
     __tablename__ = 'Option'
@@ -83,6 +95,12 @@ class Option(base):
         self.option_text = option_text
         self.locked = locked
 
+    def __str__(self) -> str:
+        # Copied from: https://www.quora.com/What-is-the-use-of-__str__-in-python
+        # Override to print a readable string presentation of your object
+        # below is a dynamic way of doing this without explicity constructing the string manually
+        return ', '.join(['{key}={value}'.format(key=key, value=self.__dict__.get(key)) for key in self.__dict__])
+
 
 class Vote(base):
     __tablename__ = 'Vote'
@@ -97,3 +115,9 @@ class Vote(base):
     def __init__(self, option_id, discord_participant_id):
         self.option_id = option_id
         self.discord_participant_id = discord_participant_id
+
+    def __str__(self) -> str:
+        # Copied from: https://www.quora.com/What-is-the-use-of-__str__-in-python
+        # Override to print a readable string presentation of your object
+        # below is a dynamic way of doing this without explicity constructing the string manually
+        return ', '.join(['{key}={value}'.format(key=key, value=self.__dict__.get(key)) for key in self.__dict__])

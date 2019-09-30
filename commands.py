@@ -61,7 +61,7 @@ async def configure_channel_command(command, db_channel):
 
     config.session.commit()
 
-    print('Channel %s from %s configured!' % (command.channel.name, command.server.name))
+    print('Channel %s from %s was configured with: delete_all=%r and delete_commands=%r!' % (command.channel.name, command.server.name, delete_all, delete_commands))
 
 
 async def create_poll_command(command, db_channel):
@@ -265,7 +265,7 @@ async def create_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s created!' % new_poll.poll_key)
+    print('Poll %s created!' % new_poll)
 
 
 async def edit_poll_command(command, db_channel):
@@ -363,6 +363,8 @@ async def edit_poll_command(command, db_channel):
         await auxiliary.send_temp_message(msg, command.channel)
         return
 
+    edited = ''
+
     # Get all options available in the poll
     db_options = config.session.query(models.Option).filter(models.Option.poll_id == poll.id) \
                        .order_by(models.Option.position).all()
@@ -372,6 +374,8 @@ async def edit_poll_command(command, db_channel):
         new_options = poll_params[1:]
 
         options = []
+
+        edited = 'new options added %s' % new_options
 
         # Create the options
         for option in new_options:
@@ -413,6 +417,8 @@ async def edit_poll_command(command, db_channel):
                 options = config.session.query(models.Option).filter(models.Option.position.in_(selected_options)).all()
                 num_reactions = max(10 - len(db_options) - len(options), 0)
 
+                edited = 'options removed %s' % options
+
                 for option in options:
                     config.session.delete(option)
 
@@ -436,6 +442,11 @@ async def edit_poll_command(command, db_channel):
                     pos += 1
 
             elif lock or unlock:
+                if lock:
+                    edited = 'options %s locked' % selected_options
+                else:
+                    edited = 'options %s unlocked' % selected_options
+
                 for option in selected_options:
                     num_options = len(db_options)
 
@@ -472,7 +483,7 @@ async def edit_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s created!' % poll.poll_key)
+    print('Poll %s was edited %s -> %s!' % (poll.poll_key, edited, poll))
 
 
 async def close_poll_command(command, db_channel):
