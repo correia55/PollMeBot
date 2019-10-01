@@ -30,7 +30,10 @@ class Channel(base):
         # Copied from: https://www.quora.com/What-is-the-use-of-__str__-in-python
         # Override to print a readable string presentation of your object
         # below is a dynamic way of doing this without explicity constructing the string manually
-        return ', '.join(['{key}={value}'.format(key=key, value=self.__dict__.get(key)) for key in self.__dict__])
+        return ', '.join(['{key}={value}'.format(key=key, value=str(self.__dict__.get(key))) for key in self.__dict__])
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class Poll(base):
@@ -74,7 +77,10 @@ class Poll(base):
         # Copied from: https://www.quora.com/What-is-the-use-of-__str__-in-python
         # Override to print a readable string presentation of your object
         # below is a dynamic way of doing this without explicity constructing the string manually
-        return ', '.join(['{key}={value}'.format(key=key, value=self.__dict__.get(key)) for key in self.__dict__])
+        return ', '.join(['{key}={value}'.format(key=key, value=str(self.__dict__.get(key))) for key in self.__dict__])
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class Option(base):
@@ -99,7 +105,10 @@ class Option(base):
         # Copied from: https://www.quora.com/What-is-the-use-of-__str__-in-python
         # Override to print a readable string presentation of your object
         # below is a dynamic way of doing this without explicity constructing the string manually
-        return ', '.join(['{key}={value}'.format(key=key, value=self.__dict__.get(key)) for key in self.__dict__])
+        return ', '.join(['{key}={value}'.format(key=key, value=str(self.__dict__.get(key))) for key in self.__dict__])
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class Vote(base):
@@ -120,4 +129,7 @@ class Vote(base):
         # Copied from: https://www.quora.com/What-is-the-use-of-__str__-in-python
         # Override to print a readable string presentation of your object
         # below is a dynamic way of doing this without explicity constructing the string manually
-        return ', '.join(['{key}={value}'.format(key=key, value=self.__dict__.get(key)) for key in self.__dict__])
+        return ', '.join(['{key}={value}'.format(key=key, value=str(self.__dict__.get(key))) for key in self.__dict__])
+
+    def __repr__(self):
+        return self.__str__()

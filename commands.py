@@ -61,7 +61,7 @@ async def configure_channel_command(command, db_channel):
     config.session.commit()
 
     print('Channel %s from %s was configured with: delete_all=%r and delete_commands=%r!' % (
-    command.channel.name, command.server.name, delete_all, delete_commands))
+        command.channel.name, command.server.name, delete_all, delete_commands))
 
 
 async def create_poll_command(command, db_channel):
@@ -414,7 +414,11 @@ async def edit_poll_command(command, db_channel):
             selected_options = list(set(selected_options))
 
             if remove:
-                options = config.session.query(models.Option).filter(models.Option.position.in_(selected_options)).all()
+                options = config.session.query(models.Option) \
+                    .filter(models.Option.poll_id == poll.id) \
+                    .filter(models.Option.position.in_(selected_options)) \
+                    .all()
+
                 num_reactions = max(10 - len(db_options) - len(options), 0)
 
                 edited = 'options removed %s' % options
