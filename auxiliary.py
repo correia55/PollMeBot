@@ -368,8 +368,11 @@ def date_given_day(date, day):
     :param day: the day.
     """
 
-    last_day_month = (date.replace(month=(date.month + 1) % 12, day=1) - datetime.timedelta(days=1)).day
-    last_day_next_month = (date.replace(month=(date.month + 2) % 12, day=1) - datetime.timedelta(days=1)).day
+    next_month = date.month + 1 if date.month + 1 < 13 else date.month - 12
+    next_next_month = date.month + 2 if date.month + 2 < 13 else date.month - 12
+
+    last_day_month = (date.replace(month=next_month, day=1) - datetime.timedelta(days=1)).day
+    last_day_next_month = (date.replace(month=next_next_month, day=1) - datetime.timedelta(days=1)).day
 
     # It is this month's
     if date.day <= day <= last_day_month:
@@ -409,8 +412,6 @@ async def refresh_poll(poll, channel_discord_id):
     poll.discord_message_id = msg.id
 
     config.session.commit()
-
-    print('Poll %s refreshed!' % poll.poll_key)
 
     if not poll.closed:
         # Add a reaction for each option, with 9 being the max number of reactions

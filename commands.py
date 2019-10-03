@@ -60,8 +60,8 @@ async def configure_channel_command(command, db_channel):
 
     config.session.commit()
 
-    print('Channel %s from %s was configured with: delete_all=%r and delete_commands=%r!' % (
-        command.channel.name, command.server.name, delete_all, delete_commands))
+    print('Channel %s from %s was configured -> %s!' % (
+        command.channel.name, command.server.name, command.content))
 
 
 async def create_poll_command(command, db_channel):
@@ -265,7 +265,7 @@ async def create_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s created!' % new_poll)
+    print('Poll %s created -> command.content!' % (poll.poll_key, command.content))
 
 
 async def edit_poll_command(command, db_channel):
@@ -492,7 +492,7 @@ async def edit_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s was edited %s -> %s!' % (poll.poll_key, edited, poll))
+    print('Poll %s was edited -> %s!' % (poll.poll_key, command.content))
 
 
 async def close_poll_command(command, db_channel):
@@ -550,7 +550,7 @@ async def close_poll_command(command, db_channel):
 
                 config.session.commit()
 
-                print('Poll %s closed!' % poll.poll_key)
+                print('Poll %s closed -> %s!' % (poll.poll_key, command.content))
         else:
             msg = 'There\'s no poll with that id for you to close.\nYour command: **%s**' % command.content
 
@@ -599,7 +599,7 @@ async def delete_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s deleted!' % poll.poll_key)
+    print('Poll %s deleted -> %s!' % (poll.poll_key, command.content))
 
 
 async def vote_poll_command(command, db_channel):
@@ -714,7 +714,7 @@ async def vote_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('%s voted in %s!' % (author_id, poll.poll_key))
+    print('%s voted in %s -> %s!' % (author_id, poll.poll_key, command.content))
 
 
 async def unvote_poll_command(command, db_channel):
@@ -794,7 +794,7 @@ async def unvote_poll_command(command, db_channel):
 
             config.session.commit()
 
-            print('<@%s> removed vote from %s!' % (author_id, poll.poll_key))
+            print('%s removed vote from %s -> %s!' % (author_id, poll.poll_key, command.content))
 
     # Option is not a number
     except ValueError:
@@ -835,6 +835,8 @@ async def refresh_poll_command(command, db_channel):
     # and delete the previous message
     if poll is not None:
         await auxiliary.refresh_poll(poll, db_channel.discord_id)
+
+        print('Poll %s refreshed -> %s!' % (poll.poll_key, command.content))
 
 
 async def poll_mention_message_command(command, db_channel):
