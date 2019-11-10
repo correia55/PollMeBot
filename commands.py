@@ -265,7 +265,7 @@ async def create_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s created -> command.content!' % (poll.poll_key, command.content))
+    print('Poll %s created -> %s!' % (poll.poll_key, command.content))
 
 
 async def edit_poll_command(command, db_channel):
@@ -492,7 +492,7 @@ async def edit_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s was edited -> %s!' % (poll.poll_key, command.content))
+    print('Poll %s was edited for %s -> %s!' % (poll.poll_key, edited, command.content))
 
 
 async def close_poll_command(command, db_channel):
@@ -592,14 +592,14 @@ async def delete_poll_command(command, db_channel):
     # Delete the message with the poll
     if poll is not None:
         await auxiliary.delete_poll(poll, db_channel, command.author.id)
+
+        config.session.commit()
+
+        print('Poll %s deleted -> %s!' % (poll.poll_key, command.content))
     else:
         msg = 'There\'s no poll with that id for you to delete.\nYour command: **%s**' % command.content
 
         await auxiliary.send_temp_message(msg, command.channel)
-
-    config.session.commit()
-
-    print('Poll %s deleted -> %s!' % (poll.poll_key, command.content))
 
 
 async def vote_poll_command(command, db_channel):
@@ -879,6 +879,10 @@ async def poll_mention_message_command(command, db_channel):
 
             if msg is not None:
                 await config.client.send_message(command.channel, msg)
+        else:
+            msg = 'There\'s no poll with that id for you to mention.\nYour command: **%s**' % command.content
+
+            await auxiliary.send_temp_message(msg, command.channel)
     except ValueError:
         pass
 

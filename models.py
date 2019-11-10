@@ -51,8 +51,8 @@ class Poll(base):
 
     options = relationship('Option', cascade='all,delete')
 
-    def __init__(self, poll_key, discord_author_id, question, multiple_options, only_numbers, new_options, allow_external,
-                 channel_id, discord_server_id):
+    def __init__(self, poll_key, discord_author_id, question, multiple_options, only_numbers, new_options,
+                 allow_external, channel_id, discord_server_id):
         self.poll_key = poll_key
         self.discord_author_id = discord_author_id
         self.question = question
