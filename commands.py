@@ -5,7 +5,6 @@ import configuration as config
 import auxiliary
 import models
 
-
 # Names of weekdays in English and Portuguese
 WEEKDAYS_EN = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 WEEKDAYS_PT = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
@@ -61,7 +60,8 @@ async def configure_channel_command(command, db_channel):
 
     config.session.commit()
 
-    print('Channel %s from %s configured!' % (command.channel.name, command.server.name))
+    print('Channel %s from %s was configured -> %s!' % (
+        command.channel.name, command.server.name, command.content))
 
 
 async def create_poll_command(command, db_channel):
@@ -163,7 +163,7 @@ async def create_poll_command(command, db_channel):
     # Limit the number of polls per server
     if num_polls >= config.POLL_LIMIT_SERVER:
         polls = config.session.query(models.Poll).filter(models.Poll.discord_server_id == discord_server_id) \
-                       .filter(models.Poll.discord_author_id == command.author.id).all()
+            .filter(models.Poll.discord_author_id == command.author.id).all()
 
         msg = 'The server you\'re in has reached its poll limit, creating another poll is not possible.'
 
@@ -265,7 +265,7 @@ async def create_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s created!' % new_poll.poll_key)
+    print('Poll %s created -> command.content!' % (poll.poll_key, command.content))
 
 
 async def edit_poll_command(command, db_channel):
@@ -363,15 +363,19 @@ async def edit_poll_command(command, db_channel):
         await auxiliary.send_temp_message(msg, command.channel)
         return
 
+    edited = ''
+
     # Get all options available in the poll
     db_options = config.session.query(models.Option).filter(models.Option.poll_id == poll.id) \
-                       .order_by(models.Option.position).all()
+        .order_by(models.Option.position).all()
 
     # Add the new options
     if add:
         new_options = poll_params[1:]
 
         options = []
+
+        edited = 'new options added %s' % new_options
 
         # Create the options
         for option in new_options:
@@ -410,8 +414,14 @@ async def edit_poll_command(command, db_channel):
             selected_options = list(set(selected_options))
 
             if remove:
-                options = config.session.query(models.Option).filter(models.Option.position.in_(selected_options)).all()
+                options = config.session.query(models.Option) \
+                    .filter(models.Option.poll_id == poll.id) \
+                    .filter(models.Option.position.in_(selected_options)) \
+                    .all()
+
                 num_reactions = max(10 - len(db_options) - len(options), 0)
+
+                edited = 'options removed %s' % options
 
                 for option in options:
                     config.session.delete(option)
@@ -436,6 +446,11 @@ async def edit_poll_command(command, db_channel):
                     pos += 1
 
             elif lock or unlock:
+                if lock:
+                    edited = 'options %s locked' % selected_options
+                else:
+                    edited = 'options %s unlocked' % selected_options
+
                 for option in selected_options:
                     num_options = len(db_options)
 
@@ -453,12 +468,17 @@ async def edit_poll_command(command, db_channel):
         # Edit poll question
         if len(poll_params) > 1:
             poll.question = poll_params[1]
+
+            edited = 'question is now %s' % poll.question
         # Edit poll settings
         else:
             poll.multiple_options = multiple_options
             poll.only_numbers = only_numbers
             poll.new_options = new_options
             poll.allow_external = allow_external
+
+            edited = 'settings multiple_options=%r, only_numbers=%r, new_options=%r, allow_external=%r changed' \
+                     % (multiple_options, only_numbers, new_options, allow_external)
 
     # Edit message
     c = config.client.get_channel(db_channel.discord_id)
@@ -472,7 +492,7 @@ async def edit_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s created!' % poll.poll_key)
+    print('Poll %s was edited -> %s!' % (poll.poll_key, command.content))
 
 
 async def close_poll_command(command, db_channel):
@@ -521,7 +541,7 @@ async def close_poll_command(command, db_channel):
             # Only the author can close the poll
             if poll.discord_author_id == command.author.id:
                 options = config.session.query(models.Option).filter(models.Option.poll_id == poll.id) \
-                                 .order_by(models.Option.position).all()
+                    .order_by(models.Option.position).all()
 
                 # Send a private message to all participants in the poll
                 await auxiliary.send_closed_poll_message(options, command.server, poll, command.channel)
@@ -530,7 +550,7 @@ async def close_poll_command(command, db_channel):
 
                 config.session.commit()
 
-                print('Poll %s closed!' % poll.poll_key)
+                print('Poll %s closed -> %s!' % (poll.poll_key, command.content))
         else:
             msg = 'There\'s no poll with that id for you to close.\nYour command: **%s**' % command.content
 
@@ -579,7 +599,7 @@ async def delete_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s deleted!' % poll.poll_key)
+    print('Poll %s deleted -> %s!' % (poll.poll_key, command.content))
 
 
 async def vote_poll_command(command, db_channel):
@@ -631,7 +651,7 @@ async def vote_poll_command(command, db_channel):
 
     # Get all options available in the poll
     db_options = config.session.query(models.Option).filter(models.Option.poll_id == poll.id) \
-                       .order_by(models.Option.position).all()
+        .order_by(models.Option.position).all()
 
     # If it is an vote for an external user and it is not allowed
     if author_id is None and not poll.allow_external:
@@ -694,7 +714,7 @@ async def vote_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('%s voted in %s!' % (author_id, poll.poll_key))
+    print('%s voted in %s -> %s!' % (author_id, poll.poll_key, command.content))
 
 
 async def unvote_poll_command(command, db_channel):
@@ -746,7 +766,7 @@ async def unvote_poll_command(command, db_channel):
 
     # Get all options available in the poll
     db_options = config.session.query(models.Option).filter(models.Option.poll_id == poll.id) \
-                       .order_by(models.Option.position).all()
+        .order_by(models.Option.position).all()
 
     poll_edited = False
 
@@ -774,7 +794,7 @@ async def unvote_poll_command(command, db_channel):
 
             config.session.commit()
 
-            print('<@%s> removed vote from %s!' % (author_id, poll.poll_key))
+            print('%s removed vote from %s -> %s!' % (author_id, poll.poll_key, command.content))
 
     # Option is not a number
     except ValueError:
@@ -815,6 +835,8 @@ async def refresh_poll_command(command, db_channel):
     # and delete the previous message
     if poll is not None:
         await auxiliary.refresh_poll(poll, db_channel.discord_id)
+
+        print('Poll %s refreshed -> %s!' % (poll.poll_key, command.content))
 
 
 async def poll_mention_message_command(command, db_channel):
