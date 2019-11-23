@@ -265,7 +265,7 @@ async def create_poll_command(command, db_channel):
 
     config.session.commit()
 
-    print('Poll %s created -> %s!' % (poll.poll_key, command.content))
+    print('Poll %s created -> %s!' % (new_poll.poll_key, command.content))
 
 
 async def edit_poll_command(command, db_channel):
