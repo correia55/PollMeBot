@@ -380,7 +380,7 @@ def date_given_day(date, day):
     # It is next month's
     elif 0 < day < date.day and day <= last_day_next_month:
         if date.month == 12:
-            date = date.replace(year=date.year, month=1, day=day)
+            date = date.replace(year=date.year + 1, month=1, day=day)
         else:
             date = date.replace(month=date.month + 1, day=day)
 
