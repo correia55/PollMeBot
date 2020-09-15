@@ -2,7 +2,7 @@ import datetime
 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, Date, DateTime, UniqueConstraint
+from sqlalchemy import Column, String, Integer, Boolean, ForeignKey, Date, DateTime, UniqueConstraint, BigInteger
 
 # Base class for DB Classes
 base = declarative_base()
@@ -15,8 +15,8 @@ class Channel(base):
     delete_commands = Column(Boolean)
     delete_all = Column(Boolean)
 
-    discord_id = Column(Integer, unique=True)
-    discord_server_id = Column(Integer)
+    discord_id = Column(BigInteger, unique=True)
+    discord_server_id = Column(BigInteger)
 
     polls = relationship('Poll', cascade='all,delete')
 
