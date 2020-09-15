@@ -20,7 +20,7 @@ async def configure_channel_command(command, db_channel):
     """
 
     # Make sure the user changing the channel settings is an admin
-    if not command.author.server_permissions.administrator:
+    if not command.author.guild_permissions.administrator:
         msg = 'Only server administrators can change a channel\'s settings.'
 
         await auxiliary.send_temp_message(msg, command.channel)
@@ -28,7 +28,7 @@ async def configure_channel_command(command, db_channel):
 
     # The ids of the Discord channel and server where the message was sent
     discord_channel_id = command.channel.id
-    discord_server_id = command.server.id
+    discord_server_id = command.guild.id
 
     # Get the list of parameters in the message
     params = auxiliary.parse_command_parameters(command.content)
@@ -61,7 +61,7 @@ async def configure_channel_command(command, db_channel):
     config.session.commit()
 
     print('Channel %s from %s was configured -> %s!' % (
-        command.channel.name, command.server.name, command.content))
+        command.channel.name, command.guild.name, command.content))
 
 
 async def create_poll_command(command, db_channel):
@@ -74,7 +74,7 @@ async def create_poll_command(command, db_channel):
 
     # The ids of the Discord channel and server where the message was sent
     discord_channel_id = command.channel.id
-    discord_server_id = command.server.id
+    discord_server_id = command.guild.id
 
     # Create channel if it does not already exist
     if db_channel is None:
@@ -188,7 +188,7 @@ async def create_poll_command(command, db_channel):
     config.session.add(new_poll)
 
     # Send a private message to each member in the server
-    for m in command.server.members:
+    for m in command.guild.members:
         if m != config.client.user and m.id != new_poll.discord_author_id:
             try:
                 await config.client.send_message(m, 'A new poll (%s) has been created in %s!'
@@ -544,7 +544,7 @@ async def close_poll_command(command, db_channel):
                     .order_by(models.Option.position).all()
 
                 # Send a private message to all participants in the poll
-                await auxiliary.send_closed_poll_message(options, command.server, poll, command.channel)
+                await auxiliary.send_closed_poll_message(options, command.guild, poll, command.channel)
 
                 await auxiliary.close_poll(poll, db_channel, selected_options)
 
@@ -849,7 +849,7 @@ async def poll_mention_message_command(command, db_channel):
 
     # If the channel does not exist in the DB
     if db_channel is None:
-        db_channel = models.Channel(command.channel.id, command.server.id)
+        db_channel = models.Channel(command.channel.id, command.guild.id)
 
         config.session.add(db_channel)
         config.session.commit()
@@ -872,7 +872,7 @@ async def poll_mention_message_command(command, db_channel):
 
         # Select the current poll
         poll = config.session.query(models.Poll).filter(models.Poll.poll_key == poll_key,
-                                                        models.Poll.discord_server_id == command.server.id).first()
+                                                        models.Poll.discord_server_id == command.guild.id).first()
 
         if poll is not None:
             msg = auxiliary.create_poll_mention_message(poll_option, message, poll.id, command.author.id)
@@ -897,7 +897,7 @@ async def help_message_command(command, db_channel):
 
     # The ids of the Discord channel and server where the message was sent
     discord_channel_id = command.channel.id
-    discord_server_id = command.server.id
+    discord_server_id = command.guild.id
 
     # Create channel if it doesn't already exist
     if db_channel is None:
