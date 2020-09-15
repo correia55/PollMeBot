@@ -16,7 +16,7 @@ class Channel(base):
     delete_all = Column(Boolean)
 
     discord_id = Column(Integer, unique=True)
-    discord_server_id = Column(String)
+    discord_server_id = Column(Integer)
 
     polls = relationship('Poll', cascade='all,delete')
 
