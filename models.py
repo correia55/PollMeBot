@@ -43,9 +43,9 @@ class Poll(base):
 
     channel_id = Column(Integer, ForeignKey('Channel.id'))
 
-    discord_server_id = Column(String)
-    discord_author_id = Column(String)
-    discord_message_id = Column(String, unique=True)
+    discord_server_id = Column(BigInteger)
+    discord_author_id = Column(BigInteger)
+    discord_message_id = Column(BigInteger, unique=True)
 
     __table_args__ = (UniqueConstraint('poll_key', 'discord_server_id', name='poll_composite_id'),)
 
@@ -90,10 +90,12 @@ class Vote(base):
     id = Column(Integer, primary_key=True)
     vote_datetime = Column(DateTime, default=datetime.datetime.utcnow)
 
-    discord_participant_id = Column(String)
+    discord_participant_id = Column(BigInteger)
+    participant_name = Column(String)
 
     option_id = Column(Integer, ForeignKey('Option.id'))
 
-    def __init__(self, option_id, discord_participant_id):
+    def __init__(self, option_id, discord_participant_id, participant_name):
         self.option_id = option_id
         self.discord_participant_id = discord_participant_id
+        self.participant_name = participant_name

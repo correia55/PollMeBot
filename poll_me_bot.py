@@ -67,10 +67,10 @@ async def on_message(message):
         try:
             # Delete all messages that were not sent by the bot
             if db_channel.delete_all and message.author != config.client.user:
-                await config.client.delete_message(message)
+                await message.delete()
             # Delete all messages associated with a command
             elif db_channel.delete_commands and is_command:
-                await config.client.delete_message(message)
+                await message.delete()
         except discord.errors.NotFound:
             pass
 
@@ -109,8 +109,8 @@ async def on_reaction_add(reaction, user):
         c = config.client.get_channel(db_channel.discord_id)
 
         try:
-            m = await config.client.get_message(c, poll.discord_message_id)
-            await config.client.edit_message(m, auxiliary.create_message(poll, db_options))
+            m = await c.fetch_message(poll.discord_message_id)
+            await m.edit(content=auxiliary.create_message(poll, db_options))
         except discord.errors.NotFound:
             config.session.delete(poll)
 
@@ -153,8 +153,8 @@ async def on_reaction_remove(reaction, user):
         c = config.client.get_channel(db_channel.discord_id)
 
         try:
-            m = await config.client.get_message(c, poll.discord_message_id)
-            await config.client.edit_message(m, auxiliary.create_message(poll, db_options))
+            m = await c.fetch_message(poll.discord_message_id)
+            await m.edit(content=auxiliary.create_message(poll, db_options))
         except discord.errors.NotFound:
             config.session.delete(poll)
 

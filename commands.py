@@ -191,7 +191,7 @@ async def create_poll_command(command, db_channel):
     for m in command.guild.members:
         if m != config.client.user and m.id != new_poll.discord_author_id:
             try:
-                await config.client.send_message(m, 'A new poll (%s) has been created in %s!'
+                await m.send('A new poll (%s) has been created in %s!'
                                                  % (new_poll.poll_key, command.channel.mention))
             except discord.errors.Forbidden:
                 pass
@@ -252,7 +252,7 @@ async def create_poll_command(command, db_channel):
     config.session.add_all(options)
 
     # Create the message with the poll
-    msg = await config.client.send_message(command.channel, auxiliary.create_message(new_poll, options))
+    msg = await command.channel.send(auxiliary.create_message(new_poll, options))
 
     new_poll.discord_message_id = msg.id
 
@@ -260,7 +260,7 @@ async def create_poll_command(command, db_channel):
     emoji = u'\u0031'
 
     for i in range(min(len(options), 9)):
-        await config.client.add_reaction(msg, emoji + u'\u20E3')
+        await msg.add_reaction(emoji + u'\u20E3')
         emoji = chr(ord(emoji) + 1)
 
     config.session.commit()
@@ -385,7 +385,7 @@ async def edit_poll_command(command, db_channel):
 
         # Get the message corresponding to the poll
         c = config.client.get_channel(db_channel.discord_id)
-        discord_poll_msg = await config.client.get_message(c, poll.discord_message_id)
+        discord_poll_msg = await c.fetch_message(poll.discord_message_id)
 
         # Add a reaction for each new option
         emoji = chr(ord(u'\u0031') + len(db_options))
@@ -394,7 +394,7 @@ async def edit_poll_command(command, db_channel):
         num_react = min(9, len(db_options) + len(options))
 
         for i in range(max(0, num_react - len(db_options))):
-            await config.client.add_reaction(discord_poll_msg, emoji + u'\u20E3')
+            await discord_poll_msg.add_reaction(emoji + u'\u20E3')
             emoji = chr(ord(emoji) + 1)
 
         db_options.extend(options)
@@ -428,7 +428,7 @@ async def edit_poll_command(command, db_channel):
 
                 # Get the message corresponding to the poll
                 c = config.client.get_channel(db_channel.discord_id)
-                discord_poll_msg = await config.client.get_message(c, poll.discord_message_id)
+                discord_poll_msg = await c.fetch_message(poll.discord_message_id)
 
                 db_options = config.session.query(models.Option).filter(models.Option.poll_id == poll.id) \
                     .order_by(models.Option.position).all()
@@ -484,9 +484,9 @@ async def edit_poll_command(command, db_channel):
     c = config.client.get_channel(db_channel.discord_id)
 
     try:
-        m = await config.client.get_message(c, poll.discord_message_id)
+        m = await c.fetch_message(poll.discord_message_id)
 
-        await config.client.edit_message(m, auxiliary.create_message(poll, db_options))
+        await m.edit(content=auxiliary.create_message(poll, db_options))
     except discord.errors.NotFound:
         config.session.delete(poll)
 
@@ -691,7 +691,17 @@ async def vote_poll_command(command, db_channel):
 
                 config.session.flush()
 
-                vote = models.Vote(options.id, author_id)
+                # Check the type of participant
+                # int means discord used
+                # string means external participant
+                if type(author_id) == str:
+                    discord_participant_id = None
+                    participant_name = author_id
+                else:
+                    discord_participant_id = author_id
+                    participant_name = None
+
+                vote = models.Vote(options.id, discord_participant_id, participant_name)
                 config.session.add(vote)
 
                 poll_edited = True
@@ -707,8 +717,8 @@ async def vote_poll_command(command, db_channel):
         c = config.client.get_channel(db_channel.discord_id)
 
         try:
-            m = await config.client.get_message(c, poll.discord_message_id)
-            await config.client.edit_message(m, auxiliary.create_message(poll, db_options))
+            m = await c.fetch_message(poll.discord_message_id)
+            await m.edit(content=auxiliary.create_message(poll, db_options))
         except discord.errors.NotFound:
             config.session.delete(poll)
 
@@ -786,9 +796,9 @@ async def unvote_poll_command(command, db_channel):
             c = config.client.get_channel(db_channel.discord_id)
 
             try:
-                m = await config.client.get_message(c, poll.discord_message_id)
+                m = await c.fetch_message(poll.discord_message_id)
 
-                await config.client.edit_message(m, auxiliary.create_message(poll, db_options))
+                await m.edit(content=auxiliary.create_message(poll, db_options))
             except discord.errors.NotFound:
                 config.session.delete(poll)
 
@@ -878,7 +888,7 @@ async def poll_mention_message_command(command, db_channel):
             msg = auxiliary.create_poll_mention_message(poll_option, message, poll.id, command.author.id)
 
             if msg is not None:
-                await config.client.send_message(command.channel, msg)
+                await command.channel.send(msg)
         else:
             msg = 'There\'s no poll with that id for you to mention.\nYour command: **%s**' % command.content
 
