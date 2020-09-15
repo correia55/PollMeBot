@@ -1,8 +1,9 @@
-import discord
 import datetime
 
-import configuration as config
+import discord
+
 import auxiliary
+import configuration as config
 import models
 
 # Names of weekdays in English and Portuguese
@@ -192,8 +193,8 @@ async def create_poll_command(command, db_channel):
         if m != config.client.user and m.id != new_poll.discord_author_id:
             try:
                 await m.send('A new poll (%s) has been created in %s!'
-                                                 % (new_poll.poll_key, command.channel.mention))
-            except discord.errors.Forbidden:
+                             % (new_poll.poll_key, command.channel.mention))
+            except (discord.errors.Forbidden, discord.errors.HTTPException):
                 pass
 
     # Necessary for the options to get the poll id
