@@ -274,7 +274,8 @@ async def send_closed_poll_message(options, server, db_poll, channel):
         ids.append(o.id)
 
     # Get all the votes with different participants from this poll
-    votes = config.session.query(models.Vote).filter(models.Vote.option_id.in_(ids)).all()
+    votes = config.session.query(models.Vote).filter(models.Vote.option_id.in_(ids)) \
+        .distinct(models.Vote.discord_participant_id, models.Vote.participant_name).all()
 
     # Send a private message to each member that voted
     for v in votes:
