@@ -189,7 +189,7 @@ async def create_poll_command(command, db_channel):
     config.session.add(new_poll)
 
     # Send a private message to each member in the server
-    for m in command.guild.members:
+    for m in command.channel.members:
         if m != config.client.user and m.id != new_poll.discord_author_id:
             try:
                 await m.send('A new poll (%s) has been created in %s!'
