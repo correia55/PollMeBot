@@ -82,4 +82,7 @@ session = Session()
 
 
 # Create a client
-client = discord.Client()
+intents = discord.Intents.default()
+intents.members = True
+
+client = discord.Client(intents=intents)

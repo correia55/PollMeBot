@@ -369,7 +369,7 @@ def remove_vote(option, poll_participant, db_options):
             return False
 
         # Check the type of participant
-        # int means discord used
+        # int means discord user
         # string means external participant
         if type(poll_participant) == str:
             vote = config.session.query(models.Vote) \
