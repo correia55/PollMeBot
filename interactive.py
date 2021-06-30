@@ -27,25 +27,24 @@ async def process_reaction(reaction: discord.reaction.Reaction):
     # Get the number of the vote
     option = ord(reaction.emoji[0]) - 49
 
-    if 'key:menu' in reaction.message.content:
-        if option < 0 or option >= len(menu_options):
-            return
+    # Get the referenced message
+    c = config.client.get_channel(reaction.message.channel.id)
+    referenced_message = await c.fetch_message(reaction.message.id)
 
+    if 'key:menu' in reaction.message.content:
         if option == 0:
             msg = header % 'create_poll' + '\nReply to this message with the title of the poll.'
-            await auxiliary.send_temp_message(msg, reaction.message.channel, time=300)
+            task = asyncio.create_task(auxiliary.send_temp_message(msg, reaction.message.channel, time=300))
         elif option == 1:
             # Get the channel information from the DB
             db_channel = config.session.query(models.Channel) \
                 .filter(models.Channel.discord_id == reaction.message.channel.id).first()
 
-            await commands.help_message_command(reaction.message, db_channel)
+            task = asyncio.create_task(commands.help_message_command(reaction.message, db_channel))
+        else:
+            return
 
     elif 'key:add_options' in reaction.message.content:
-        # Get the referenced message
-        c = config.client.get_channel(reaction.message.channel.id)
-        referenced_message = await c.fetch_message(reaction.message.id)
-
         if option == 128149:
             # Get the current dates
             start_date = datetime.datetime.today()
@@ -53,7 +52,20 @@ async def process_reaction(reaction: discord.reaction.Reaction):
             num_options = max(6 - start_date.weekday(), 0)
             end_date = start_date + datetime.timedelta(days=num_options)
 
-            await add_options(auxiliary.create_weekly_options(start_date, end_date), referenced_message)
+            task = asyncio.create_task(
+                add_options(auxiliary.create_weekly_options(start_date, end_date), referenced_message))
+        else:
+            return
+    else:
+        return
+
+    # Delete this message
+    try:
+        await referenced_message.delete()
+    except discord.errors.NotFound:
+        pass
+
+    await task
 
 
 async def process_reply(reply: discord.message.Message, referenced_message: discord.message.Message,
@@ -67,18 +79,17 @@ async def process_reply(reply: discord.message.Message, referenced_message: disc
     """
 
     if 'key:create_poll' in referenced_message.content:
-        await create_poll(reply, db_channel)
-
+        task = asyncio.create_task(create_poll(reply, db_channel))
     elif 'key:add_options' in referenced_message.content:
-        await add_options(reply.content.split(','), referenced_message)
+        task = asyncio.create_task(add_options(reply.content.split(','), referenced_message))
     else:
         return
 
-    # Wait for 300 seconds
-    await asyncio.sleep(300)
-
-    # Then delete the reply
+    # Then delete the referenced message and reply
+    await referenced_message.delete()
     await reply.delete()
+
+    await task
 
 
 async def create_poll(reply: discord.message.Message, db_channel: models.Channel):
