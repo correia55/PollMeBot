@@ -1,9 +1,11 @@
 import asyncio
+
 import discord
 
-import configuration as config
-import commands
 import auxiliary
+import commands
+import configuration as config
+import interactive
 import models
 
 
@@ -36,6 +38,18 @@ async def on_message(message):
     # Get the channel information from the DB
     db_channel = config.session.query(models.Channel).filter(models.Channel.discord_id == message.channel.id).first()
 
+    # If it is a reply
+    if message.reference:
+        # Get the referenced message
+        c = config.client.get_channel(message.channel.id)
+        referenced_message = await c.fetch_message(message.reference.message_id)
+
+        # If it was an interaction with one of the bot's messages
+        if referenced_message.author == config.client.user:
+            await interactive.process_reply(message, referenced_message, db_channel)
+
+        return
+
     is_command = True
 
     # Check if it is a command and call the correct function to treat it
@@ -58,7 +72,7 @@ async def on_message(message):
     elif message.content.startswith('!unvote '):
         await commands.unvote_poll_command(message, db_channel)
     elif message.content.startswith('!help_me_poll'):
-        await commands.help_message_command(message, db_channel)
+        await commands.start_interactive_command(message, db_channel)
     else:
         is_command = False
 
@@ -77,7 +91,7 @@ async def on_message(message):
 
 # When a reaction is added in Discord
 @config.client.event
-async def on_reaction_add(reaction, user):
+async def on_reaction_add(reaction: discord.reaction.Reaction, user):
     if user == config.client.user:
         return
 
@@ -86,6 +100,10 @@ async def on_reaction_add(reaction, user):
 
     # The reaction was to a message that is not a poll
     if poll is None:
+        # If it was an interaction with one of the bot's messages
+        if reaction.message.author == config.client.user:
+            await interactive.process_reaction(reaction)
+
         return
 
     # Get the number of the vote
@@ -96,11 +114,11 @@ async def on_reaction_add(reaction, user):
 
     # Get all options available in the poll
     db_options = config.session.query(models.Option).filter(models.Option.poll_id == poll.id) \
-                       .order_by(models.Option.position).all()
+        .order_by(models.Option.position).all()
 
     # Get the channel information from the DB
     db_channel = config.session.query(models.Channel).filter(models.Channel.discord_id == reaction.message.channel.id) \
-                       .first()
+        .first()
 
     poll_edited = auxiliary.add_vote(option, user.id, db_options, poll.multiple_options)
 
@@ -140,11 +158,11 @@ async def on_reaction_remove(reaction, user):
 
     # Get all options available in the poll
     db_options = config.session.query(models.Option).filter(models.Option.poll_id == poll.id) \
-                       .order_by(models.Option.position).all()
+        .order_by(models.Option.position).all()
 
     # Get the channel information from the DB
     db_channel = config.session.query(models.Channel).filter(models.Channel.discord_id == reaction.message.channel.id) \
-                       .first()
+        .first()
 
     poll_edited = auxiliary.remove_vote(option, user.id, db_options)
 
@@ -161,6 +179,7 @@ async def on_reaction_remove(reaction, user):
         config.session.commit()
 
         print('%s removed reaction %d from %s!' % (user.id, option, poll.poll_key))
+
 
 # Run the bot
 config.client.run(config.token)

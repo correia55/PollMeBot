@@ -4,11 +4,8 @@ import discord
 
 import auxiliary
 import configuration as config
+import interactive
 import models
-
-# Names of weekdays in English and Portuguese
-WEEKDAYS_EN = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-WEEKDAYS_PT = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
 
 
 async def configure_channel_command(command, db_channel):
@@ -74,14 +71,11 @@ async def create_poll_command(command, db_channel):
     """
 
     # The ids of the Discord channel and server where the message was sent
-    discord_channel_id = command.channel.id
     discord_server_id = command.guild.id
 
     # Create channel if it does not already exist
     if db_channel is None:
-        db_channel = models.Channel(discord_channel_id, discord_server_id)
-
-        config.session.add(db_channel)
+        db_channel = auxiliary.create_channel(command)
 
     # Get the list of parameters in the message
     params = auxiliary.parse_command_parameters(command.content)
@@ -219,9 +213,6 @@ async def create_poll_command(command, db_channel):
             if len(days) > 1:
                 end_day = int(days[1])
                 end_date = auxiliary.date_given_day(start_date, end_day)
-            else:
-                num_options = max(6 - start_date.weekday(), 0)
-                end_date = start_date + datetime.timedelta(days=num_options)
 
             # Remove this option
             poll_params.remove(poll_params[day_param_poll_pos])
@@ -232,15 +223,10 @@ async def create_poll_command(command, db_channel):
     if len(poll_params[2:]) != 0 or weekly:
         # Add days of the week as options
         if weekly:
-            while start_date <= end_date:
-                # Name depending on the option used
-                if pt:
-                    day_name = WEEKDAYS_PT[start_date.weekday()]
-                else:
-                    day_name = WEEKDAYS_EN[start_date.weekday()]
+            weekly_options = auxiliary.create_weekly_options(start_date, end_date, pt=pt)
 
-                options.append(models.Option(new_poll.id, len(options) + 1, '%s (%s)' % (day_name, start_date.day)))
-                start_date = start_date + datetime.timedelta(days=1)
+            for option in weekly_options:
+                options.append(models.Option(new_poll.id, len(options) + 1, option))
 
         for option in poll_params[2:]:
             options.append(models.Option(new_poll.id, len(options) + 1, option))
@@ -257,12 +243,8 @@ async def create_poll_command(command, db_channel):
 
     new_poll.discord_message_id = msg.id
 
-    # Add a reaction for each option, with 9 being the max number of reactions
-    emoji = u'\u0031'
-
-    for i in range(min(len(options), 9)):
-        await msg.add_reaction(emoji + u'\u20E3')
-        emoji = chr(ord(emoji) + 1)
+    # Add a reaction for each option
+    await auxiliary.add_options_reactions(msg, options)
 
     config.session.commit()
 
@@ -860,10 +842,7 @@ async def poll_mention_message_command(command, db_channel):
 
     # If the channel does not exist in the DB
     if db_channel is None:
-        db_channel = models.Channel(command.channel.id, command.guild.id)
-
-        config.session.add(db_channel)
-        config.session.commit()
+        auxiliary.create_channel(command)
 
     # Get the list of parameters in the message
     params = auxiliary.parse_command_parameters(command.content)
@@ -906,16 +885,9 @@ async def help_message_command(command, db_channel):
     :param db_channel: the corresponding channel entry in the DB.
     """
 
-    # The ids of the Discord channel and server where the message was sent
-    discord_channel_id = command.channel.id
-    discord_server_id = command.guild.id
-
     # Create channel if it doesn't already exist
     if db_channel is None:
-        db_channel = models.Channel(discord_channel_id, discord_server_id)
-
-        config.session.add(db_channel)
-        config.session.commit()
+        auxiliary.create_channel(command)
 
     msg = 'Poll Me Bot Help\n' \
           '----------------\n' \
@@ -926,3 +898,23 @@ async def help_message_command(command, db_channel):
           '(This message will self-destruct in 30 seconds.)'
 
     await auxiliary.send_temp_message(msg, command.channel)
+
+
+async def start_interactive_command(command: discord.message.Message, db_channel):
+    """
+    Show a help message with the available commands.
+
+    :param command: the command used.
+    :param db_channel: the corresponding channel entry in the DB.
+    """
+
+    # Create channel if it doesn't already exist
+    if db_channel is None:
+        auxiliary.create_channel(command)
+
+    msg = interactive.header % 'menu'
+
+    for i in range(len(interactive.menu_options)):
+        msg += '\n' + str(i + 1) + ' - ' + interactive.menu_options[i]
+
+    await auxiliary.show_interactive_message(msg, command.channel, interactive.menu_options)

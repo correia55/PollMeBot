@@ -1,10 +1,15 @@
 import asyncio
 import datetime
+from typing import List, Any
 
 import discord
 
 import configuration as config
 import models
+
+# Names of weekdays in English and Portuguese
+WEEKDAYS_EN = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+WEEKDAYS_PT = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
 
 
 def parse_command_parameters(command):
@@ -208,10 +213,13 @@ async def check_messages_exist():
 
         c = config.client.get_channel(channel.discord_id)
 
-        try:
-            await c.fetch_message(poll.discord_message_id)
-        except discord.errors.NotFound:
+        if poll.discord_message_id is None:
             config.session.delete(poll)
+        else:
+            try:
+                await c.fetch_message(poll.discord_message_id)
+            except discord.errors.NotFound:
+                config.session.delete(poll)
 
     print('Checking for deleted messages and channels...Done')
 
@@ -247,6 +255,32 @@ async def send_temp_message(message, channel, time=30):
 
     # Send the message
     msg = await channel.send(message)
+
+    # Wait for 30 seconds
+    await asyncio.sleep(time)
+
+    # Delete this message
+    try:
+        await msg.delete()
+    except discord.errors.NotFound:
+        pass
+
+
+async def show_interactive_message(message, channel, options: List[Any], time=300):
+    """
+    Show a temporary interactive message.
+
+    :param message: the message sent.
+    :param channel: the Discord channel.
+    :param options: the options list.
+    :param time: the time before deleting the temporary message.
+    """
+
+    # Send the message
+    msg = await channel.send(message)
+
+    # Add a reaction for each option
+    await add_options_reactions(msg, options)
 
     # Wait for 30 seconds
     await asyncio.sleep(time)
@@ -515,3 +549,64 @@ def create_poll_mention_message(poll_option, message, db_poll_id, discord_author
     msg += ': %s.' % message
 
     return msg
+
+
+def create_channel(command: discord.message.Message) -> models.Channel:
+    """
+    Create a channel in the DB that represents the Discord channel where the message was sent.
+
+    :param command: the message/command.
+    """
+
+    # The ids of the Discord channel and server where the message was sent
+    discord_channel_id = command.channel.id
+    discord_server_id = command.guild.id
+
+    db_channel = models.Channel(discord_channel_id, discord_server_id)
+
+    config.session.add(db_channel)
+    config.session.commit()
+
+    return db_channel
+
+
+async def add_options_reactions(message: discord.message.Message, options: List[Any]):
+    """
+    Add a reaction for each of the options in the list.
+    Maximum number of reactions is 9.
+
+    :param message: the message.
+    :param options: the options list.
+    """
+
+    # Add a reaction for each option, with 9 being the max number of reactions
+    emoji = u'\u0031'
+
+    for i in range(min(len(options), 9)):
+        await message.add_reaction(emoji + u'\u20E3')
+        emoji = chr(ord(emoji) + 1)
+
+
+def create_weekly_options(start_date: datetime.date, end_date: datetime.date, pt=False) -> List[str]:
+    """
+    Create a list of options with the days of the week.
+
+    :param start_date: the starting day for the options.
+    :param end_date: the end day for the options.
+    :param pt: whether or not the options should be in portuguese. Otherwise, they'll be in english.
+    :return: the list of options.
+    """
+
+    options = []
+
+    while start_date <= end_date:
+        # Name depending on the option used
+        if pt:
+            day_name = WEEKDAYS_PT[start_date.weekday()]
+        else:
+            day_name = WEEKDAYS_EN[start_date.weekday()]
+
+        options.append('%s (%s)' % (day_name, start_date.day))
+        start_date = start_date + datetime.timedelta(days=1)
+
+    return options
