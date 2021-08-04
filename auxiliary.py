@@ -471,7 +471,7 @@ async def refresh_poll(poll, channel_discord_id):
     options = config.session.query(models.Option).filter(models.Option.poll_id == poll.id) \
         .order_by(models.Option.position).all()
 
-    msg = await c.send(create_message(poll, options))
+    msg = await c.send(create_message(poll, options), allowed_mentions=discord.AllowedMentions.none())
     poll.discord_message_id = msg.id
 
     config.session.commit()
