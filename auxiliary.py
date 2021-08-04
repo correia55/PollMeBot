@@ -1,4 +1,3 @@
-import asyncio
 import datetime
 from typing import List, Any
 
@@ -250,20 +249,11 @@ async def send_temp_message(message, channel, time=30):
 
     :param message: the message sent.
     :param channel: the Discord channel.
-    :param time: the time before deleting the temporary message.
+    :param time: the time before deleting the temporary message, in seconds.
     """
 
     # Send the message
-    msg = await channel.send(message)
-
-    # Wait for 30 seconds
-    await asyncio.sleep(time)
-
-    # Delete this message
-    try:
-        await msg.delete()
-    except discord.errors.NotFound:
-        pass
+    await channel.send(message, delete_after=time)
 
 
 async def show_interactive_message(message, channel, options: List[Any], time=300):
@@ -273,23 +263,14 @@ async def show_interactive_message(message, channel, options: List[Any], time=30
     :param message: the message sent.
     :param channel: the Discord channel.
     :param options: the options list.
-    :param time: the time before deleting the temporary message.
+    :param time: the time before deleting the temporary message, in seconds.
     """
 
     # Send the message
-    msg = await channel.send(message)
+    msg = await channel.send(message, delete_after=time)
 
     # Add a reaction for each option
     await add_options_reactions(msg, options)
-
-    # Wait for 30 seconds
-    await asyncio.sleep(time)
-
-    # Delete this message
-    try:
-        await msg.delete()
-    except discord.errors.NotFound:
-        pass
 
 
 async def send_closed_poll_message(options, server, db_poll, channel):
