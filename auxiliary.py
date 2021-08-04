@@ -452,10 +452,15 @@ async def refresh_poll(poll, channel_discord_id):
     options = config.session.query(models.Option).filter(models.Option.poll_id == poll.id) \
         .order_by(models.Option.position).all()
 
-    msg = await c.send(create_message(poll, options), allowed_mentions=discord.AllowedMentions.none())
+    # TODO: START - TEMPORARY FIX FOR ANDROID DEVICES - WHEN FIXED, REVERT THIS
+    # ------- START -------
+    msg = await c.send('Placeholder')
     poll.discord_message_id = msg.id
 
     config.session.commit()
+
+    await msg.edit(content=create_message(poll, options))
+    # ------- END -------
 
     print('Poll %s refreshed!' % poll.poll_key)
 
